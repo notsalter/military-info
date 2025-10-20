@@ -56,6 +56,11 @@ const MILITARY_RSS_FEEDS = [
   'https://theaviationist.com/feed/',
   'https://www.navalnews.com/feed/',
   'https://www.defenseone.com/rss/all/',
+  'https://www.thedefensepost.com/feed/',
+  'https://www.nationaldefensemagazine.org/rss',
+  'https://warontherocks.com/feed/',
+  'https://www.darpa.mil/news/rss',
+  'https://www.defense.gov/DesktopModules/ArticleCS/RSS.ashx',
   // 'https://www.military.com/rss' // Disabled: returns 500 errors
 ];
 

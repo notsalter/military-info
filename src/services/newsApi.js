@@ -139,10 +139,10 @@ const fetchFromNewsAPI = async (query, pageSize) => {
         'spacex', 'starship', 'rocket launch',
         
         // Politics (unless defense policy)
-        'democracy crisis', 'election', 'supreme court',
+        'election',
         
         // Cyber/Tech (unless military cyber)
-        'cyberattack', 'data breach', 'hack', 'password'
+        'password'
       ];
       
       // Must have at least one military keyword to be considered relevant
@@ -266,10 +266,10 @@ const fetchFromTheNewsAPI = async (query, pageSize) => {
         'spacex', 'starship', 'rocket launch',
         
         // Politics (unless defense policy)
-        'democracy crisis', 'election', 'supreme court',
+        'election',
         
         // Cyber/Tech (unless military cyber)
-        'cyberattack', 'data breach', 'hack', 'password'
+        'password'
       ];
       
       // Must have at least one military keyword to be considered relevant
