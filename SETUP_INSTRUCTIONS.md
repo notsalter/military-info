@@ -1,187 +1,61 @@
-# 🚀 Setup Instructions - Military Info
+# 🚀 Setup Instructions - Military Info Command Center
 
-## Quick Start Guide
+## Unified Setup Process
 
 ### Step 1: Install Dependencies
-
-All dependencies are already installed. If you need to reinstall:
-
+Ensure you have Node.js (v18+) installed. Clone the repository and execute:
 ```bash
 npm install
 ```
 
-### Step 2: Get Your News API Key
-
-1. Visit **[NewsAPI.org](https://newsapi.org/register)**
-2. Fill out the registration form
-3. Verify your email
-4. Copy your API Key from the dashboard
-
-### Step 3: Configure Environment Variables
-
-1. Open the `.env` file in the root directory
-2. Replace the empty value with your API key:
-
-```env
-VITE_NEWS_API_KEY=paste_your_api_key_here
-```
-
-**Example:**
-```env
-VITE_NEWS_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
-```
-
-### Step 4: Run the Application
-
-Start the development server:
-
+### Step 2: Run the Dashboard
+Start the local server:
 ```bash
 npm run dev
 ```
-
-The application will open at: **http://localhost:5173**
-
-### Step 5: Test the Application
-
-1. Wait for the initial news to load
-2. Try searching for specific keywords:
-   - "kapal selam" (submarine)
-   - "jet tempur" (fighter jet)
-   - "pertahanan siber" (cyber defense)
-   - "angkatan laut" (navy)
-3. Click on any news card to open the full article
-
-## Common Issues & Solutions
-
-### ❌ API Key Error (401 Unauthorized)
-
-**Symptoms:**
-- Red error message appears
-- "API Key tidak valid"
-
-**Solutions:**
-1. Double-check your API key in `.env`
-2. Ensure there are no extra spaces
-3. Restart the development server: `Ctrl+C` then `npm run dev`
-4. Verify your API key at [NewsAPI Dashboard](https://newsapi.org/account)
-
-### ❌ No Articles Showing Up
-
-**Symptoms:**
-- "Tidak ada artikel yang ditemukan"
-
-**Solutions:**
-1. Check your internet connection
-2. Try different search keywords
-3. Check if you've exceeded the 100 requests/day limit (free tier)
-4. Open browser console (F12) to see detailed errors
-
-### ❌ Tailwind Styles Not Working
-
-**Symptoms:**
-- Application looks unstyled
-- No colors or layouts
-
-**Solutions:**
-1. Ensure `postcss.config.js` and `tailwind.config.js` exist
-2. Restart the development server
-3. Clear browser cache (Ctrl+Shift+R)
-
-## Project Structure
-
-```
-src/
-├── components/          # React components
-│   ├── ArticleCard.jsx  # Individual article card
-│   ├── ArticleGrid.jsx  # Grid layout for articles
-│   ├── SearchBar.jsx    # Search input component
-│   ├── Loading.jsx      # Loading spinner
-│   └── ErrorMessage.jsx # Error display
-├── services/
-│   └── newsApi.js       # News API integration
-├── App.jsx              # Main application
-├── main.jsx             # Entry point
-└── index.css            # Tailwind imports
-```
-
-## Available Scripts
-
-| Command | Description |
-|---------|-------------|
-| `npm run dev` | Start development server |
-| `npm run build` | Build for production |
-| `npm run preview` | Preview production build |
-| `npm run lint` | Run ESLint |
-
-## Building for Production
-
-1. Build the application:
-   ```bash
-   npm run build
-   ```
-
-2. Test the production build:
-   ```bash
-   npm run preview
-   ```
-
-3. Deploy the `dist/` folder to your hosting service
-
-## Deployment Options
-
-### Option 1: Vercel (Easiest)
-
-1. Push your code to GitHub
-2. Visit [Vercel](https://vercel.com)
-3. Import your GitHub repository
-4. Add environment variable: `VITE_NEWS_API_KEY`
-5. Deploy!
-
-### Option 2: Netlify
-
-1. Build the project: `npm run build`
-2. Visit [Netlify](https://netlify.com)
-3. Drag & drop the `dist/` folder
-4. Add environment variable in Site Settings
-
-## Features Implemented
-
-✅ News feed from NewsAPI.org  
-✅ Real-time search functionality  
-✅ Responsive design (mobile, tablet, desktop)  
-✅ Loading indicators  
-✅ Error handling  
-✅ Click to open full article  
-✅ Professional UI with Tailwind CSS  
-✅ Environment variables for API key security  
-
-## Next Steps (Optional Enhancements)
-
-- [ ] Add pagination for more articles
-- [ ] Implement category filters (land, sea, air forces)
-- [ ] Add bookmark/save functionality
-- [ ] Dark mode toggle
-- [ ] Share article on social media
-- [ ] Offline support with Service Workers
-
-## Need Help?
-
-- **NewsAPI Documentation**: https://newsapi.org/docs
-- **React Documentation**: https://react.dev
-- **Tailwind CSS**: https://tailwindcss.com/docs
-- **Vite Documentation**: https://vite.dev
-
-## AI-Assisted Development
-
-This project was developed with AI assistance for:
-- API integration patterns
-- State management implementation
-- Component architecture
-- Error handling strategies
-- Responsive design with Tailwind CSS
-
-All AI-assisted code sections are documented in the source files with comments.
+Open **http://localhost:5173** to view the interface.
 
 ---
 
-**Happy Coding!** 🎖️
+## 🔒 Security Configuration Options
+By default, the portal runs in **Keyless Mode** out of the box using public RSS feeds, protecting developer quotas and secrets from exposure.
+
+If you wish to configure live developer keys:
+1. Load the website in your browser.
+2. Click **⚙️ SYSTEM CONFIG** in the upper-right corner.
+3. Supply a valid **NewsAPI.org** or **TheNewsAPI.com** key.
+4. Click **Apply Changes**. The credentials will be saved in your browser's private `localStorage` cache.
+
+---
+
+## 📁 System Component Layout
+- `src/components/`
+  - [SearchBar.jsx](file:///c:/Users/salter/military-info/src/components/SearchBar.jsx) - Tactical search queries.
+  - [ArticleCard.jsx](file:///c:/Users/salter/military-info/src/components/ArticleCard.jsx) - Glassmorphic cards with custom category SVG fallbacks.
+  - [ArticleGrid.jsx](file:///c:/Users/salter/military-info/src/components/ArticleGrid.jsx) - Grid display.
+  - [ArticleDrawer.jsx](file:///c:/Users/salter/military-info/src/components/ArticleDrawer.jsx) - Side-drawer containing previews and legal disclaimers.
+  - [SettingsModal.jsx](file:///c:/Users/salter/military-info/src/components/SettingsModal.jsx) - local storage Key manager and cache controller.
+  - [Loading.jsx](file:///c:/Users/salter/military-info/src/components/Loading.jsx) - Concentric scanning reticle.
+  - [ErrorMessage.jsx](file:///c:/Users/salter/military-info/src/components/ErrorMessage.jsx) - Red warning HUD layout.
+- `src/services/`
+  - [newsApi.js](file:///c:/Users/salter/military-info/src/services/newsApi.js) - Unified query engine, credential storage, content filtering, and mock offline database fallbacks.
+  - [rssService.js](file:///c:/Users/salter/military-info/src/services/rssService.js) - 21 RSS channels manager with XML proxy fallbacks.
+
+---
+
+## 🛠️ Available Dev Scripts
+
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Starts Vite development server |
+| `npm run build` | Bundles static distribution directory to `dist/` |
+| `npm run test` | Performs automated Vitest unit testing |
+| `npm run preview` | Serves local build for verification |
+
+---
+
+## 🏛️ Copyright Compliance
+This portal strictly enforces:
+- A **250-character limit** on article descriptions (Fair Use guidelines).
+- A **DMCA takedown notice** block in the footer.
+- Click-through source redirects with secure outbound parameters.

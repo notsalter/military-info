@@ -1,218 +1,65 @@
-# ⚡ Quick Start - Military Info
+# ⚡ Quick Start - Military Info Command Center
 
 ## 📝 Before You Start
-
-You need a **FREE API Key** from NewsAPI.org to fetch news articles.
-
-### Get Your API Key (2 minutes)
-
-1. Go to: **https://newsapi.org/register**
-2. Fill in:
-   - Name
-   - Email
-   - Password
-3. Click "Submit"
-4. Check your email and verify
-5. Copy your API Key (32 characters)
+Military Info now features a **Keyless Operation Model**. You can clone and run the application instantly—no environment variables or API keys are required to get started! By default, the app query engine resolves to 21 active international military RSS syndication channels and falls back to a local offline archive if network issues occur.
 
 ---
 
 ## 🚀 Running the App (3 Steps)
 
-### Step 1: Add Your API Key
+### Step 1: Install Dependencies
+Open a terminal in the project folder and run:
+```bash
+npm install
+```
 
-1. Open the file: **`.env`** (in the root folder)
-2. Replace this line:
-   ```
-   VITE_NEWS_API_KEY=
-   ```
-   
-   With your actual API key:
-   ```
-   VITE_NEWS_API_KEY=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6
-   ```
-   
-   ⚠️ **Important**: No quotes, no spaces!
-
-### Step 2: Start the Development Server
-
-Open terminal and run:
-
+### Step 2: Start the Tactical Dev Server
+Launch Vite development server:
 ```bash
 npm run dev
 ```
 
 ### Step 3: Open in Browser
-
-The app will automatically open at:
+The app will output the local network URL, typically:
 ```
 http://localhost:5173
 ```
-
-If not, click the link in your terminal.
+Open it to access the dark-themed Tactical HUD.
 
 ---
 
-## ✅ What You Should See
-
-1. **Blue header** with "Military Info" title and 🎖️ icon
-2. **Search bar** in the header
-3. **News cards** loading (with spinner animation)
-4. **Grid of news articles** about military/defense topics
+## ⚙️ Secure Credentials Configuration
+If you have personal API keys for **NewsAPI.org** or **TheNewsAPI.com** and wish to integrate them:
+1. Open the portal in your browser.
+2. Click the **⚙️ SYSTEM CONFIG** button in the header.
+3. Paste your key(s) in the modal fields.
+4. Click **Apply Changes**. The keys will be saved securely in your browser's private `localStorage` cache.
 
 ---
 
 ## 🧪 Test the Features
 
-### Test 1: View Articles
-- Scroll through the news feed
-- You should see 20 articles
+### Test 1: Geopolitical Alert Ticker
+- Check the top of the interface: a real-time horizontal scrolling ribbon streams the latest indexed headlines.
 
-### Test 2: Click an Article
-- Click any news card
-- Article should open in a new tab
+### Test 2: Category Channels
+- Click on category tabs like **NAVAL OPERATIONS** or **CYBER & INTEL**. The news feed filters instantly client-side.
 
-### Test 3: Search
-- Type in search bar: **"kapal selam"**
-- Press Enter or click "Cari" button
-- New results should appear
+### Test 3: Safe Summary Inspection & Outbound Links
+- Click any article card. A secure side-drawer slides out containing a summary limited to 250 characters (protecting publisher copyright) and a click-through **Read Full Article** button.
 
-### Test 4: Clear Search
-- Click the **X** button in search bar
-- Or click "Cari" with empty search
-- Should return to default "militer" results
+### Test 4: Bookmarks Section
+- Open an article in the side drawer and click **★ Bookmark Report**.
+- Click the **★ BOOKMARKS** button in the header to view only saved intelligence reports.
 
----
-
-## 🐛 Troubleshooting
-
-### ❌ Error: "API Key tidak valid"
-
-**Fix:**
-1. Check `.env` file
-2. Ensure API key is correct
-3. No spaces before or after the key
-4. Restart the server: Press `Ctrl+C`, then `npm run dev`
-
-### ❌ Error: "Tidak dapat terhubung ke server"
-
-**Fix:**
-1. Check your internet connection
-2. Try again in a few seconds
-3. NewsAPI might be temporarily down
-
-### ❌ No Articles Showing
-
-**Fix:**
-1. Open browser console (Press F12)
-2. Check for error messages
-3. You might have hit the 100 requests/day limit
-4. Wait 24 hours or upgrade your API plan
-
-### ❌ Styles Look Broken
-
-**Fix:**
-1. Restart the dev server
-2. Clear browser cache (Ctrl+Shift+R)
-3. Check that `tailwind.config.js` exists
-
----
-
-## 📱 Responsive Design
-
-Test on different screen sizes:
-
-- **Desktop** (1920px): 3 columns of articles
-- **Tablet** (768px): 2 columns of articles  
-- **Mobile** (375px): 1 column of articles
-
----
-
-## 🎯 Example Search Keywords
-
-Try these searches (in Indonesian or English):
-
-**Indonesian:**
-- kapal selam (submarine)
-- jet tempur (fighter jet)
-- tank militer (military tank)
-- pertahanan siber (cyber defense)
-- angkatan laut (navy)
-- angkatan udara (air force)
-
-**English:**
-- aircraft carrier
-- military drone
-- defense technology
-- naval fleet
-- fighter aircraft
-
----
-
-## 📊 API Limits (Free Tier)
-
-- **100 requests per day**
-- **100 articles per request**
-- **1 month historical data**
-- **Updates every 15 minutes**
-
-If you need more, upgrade at: https://newsapi.org/pricing
-
----
-
-## 🔄 Restarting the Server
-
-If you need to restart:
-
-1. Press **Ctrl+C** in the terminal
-2. Run **`npm run dev`** again
+### Test 5: Load More Pagination
+- Scroll to the bottom of the feed. Click **[ LOAD MORE INTEL REPORTS ]** to render the next 12 reports in the current channel feed.
 
 ---
 
 ## 📦 Building for Production
-
-When ready to deploy:
-
+To bundle optimized, minified assets for production hosting:
 ```bash
 npm run build
 ```
-
-This creates a `dist/` folder with optimized files.
-
----
-
-## 🌐 Deploy to Vercel (Free)
-
-1. Push code to GitHub
-2. Go to **vercel.com**
-3. Click "Import Project"
-4. Select your repository
-5. Add Environment Variable:
-   - Name: `VITE_NEWS_API_KEY`
-   - Value: Your API key
-6. Click "Deploy"
-
-Done! Your app is live! 🎉
-
----
-
-## 📚 Learn More
-
-- **Full Documentation**: See `README.md`
-- **Detailed Setup**: See `SETUP_INSTRUCTIONS.md`
-- **NewsAPI Docs**: https://newsapi.org/docs
-
----
-
-## 💡 Tips
-
-1. **Save your searches**: Add feature to save favorite keywords
-2. **Bookmark articles**: Add local storage to save interesting articles
-3. **Share**: Add social media share buttons
-4. **Dark mode**: Toggle between light/dark themes
-
----
-
-**Need help?** Check the console (F12) for detailed error messages!
-
-**Enjoy your Military Info app!** 🎖️
+This generates standard static files in the `dist/` directory, ready to deploy to Vercel, Netlify, or Github Pages.

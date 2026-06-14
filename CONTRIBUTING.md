@@ -32,10 +32,10 @@ git clone https://github.com/yourusername/military-info.git
 # Install dependencies
 npm install
 
-# Create .env file
+# Create .env file (Optional - credentials can also be entered in-app)
 cp .env.example .env
 
-# Add your NewsAPI key to .env
+# (Optional) Add your NewsAPI key to .env
 # VITE_NEWS_API_KEY=your_api_key_here
 
 # Start development server

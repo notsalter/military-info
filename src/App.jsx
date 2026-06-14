@@ -26,6 +26,7 @@ function App() {
   const [bookmarksCount, setBookmarksCount] = useState(0);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
   const [keyProfile, setKeyProfile] = useState('Keyless RSS Mode');
+  const [visibleCount, setVisibleCount] = useState(12);
 
   // Count bookmarks on mount/update
   const updateBookmarksCount = () => {
@@ -40,10 +41,11 @@ function App() {
     setLoading(true);
     setError(null);
     setSelectedArticle(null);
+    setVisibleCount(12); // Reset visible pagination on fresh load
     
     try {
       console.log('📰 Sourcing news from data layer. Query:', query);
-      const result = await fetchNews(query, 30);
+      const result = await fetchNews(query, 60); // Sourced pool expanded to 60 for pagination
       
       if (result.success) {
         setArticles(result.articles);
@@ -91,6 +93,11 @@ function App() {
     updateBookmarksCount();
     updateKeyProfileBadge();
   }, []);
+
+  // Reset display count on filter changes
+  useEffect(() => {
+    setVisibleCount(12);
+  }, [activeCategory, showBookmarksOnly]);
 
   const handleSearch = (searchTerm) => {
     // Turn off bookmarks-only mode to show search results
@@ -337,9 +344,21 @@ function App() {
           {/* Grid Render */}
           {!loading && !error && (
             <ArticleGrid 
-              articles={displayedArticles} 
+              articles={displayedArticles.slice(0, visibleCount)} 
               onSelectArticle={(art) => setSelectedArticle(art)} 
             />
+          )}
+
+          {/* Load More Button */}
+          {!loading && !error && visibleCount < displayedArticles.length && (
+            <div className="flex justify-center mt-10 mb-6">
+              <button
+                onClick={() => setVisibleCount(prev => prev + 12)}
+                className="px-8 py-3 bg-slate-900/60 hover:bg-slate-800 text-cyan-400 font-mono text-xs font-bold rounded-lg border border-cyan-500/20 hover:border-cyan-500/40 hover:shadow-lg hover:shadow-cyan-500/5 transition-all uppercase tracking-widest text-glow-cyan"
+              >
+                [ LOAD MORE INTEL REPORTS ]
+              </button>
+            </div>
           )}
         </main>
       </div>

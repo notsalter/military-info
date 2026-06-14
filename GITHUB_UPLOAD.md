@@ -8,7 +8,7 @@
 2. Click the **+** icon → **New repository**
 3. Fill in:
    - **Repository name**: `military-info`
-   - **Description**: `Modern military and defense news aggregator using React and NewsAPI`
+   - **Description**: `Modern military and defense news aggregator Command Center featuring 21 RSS channels, in-app keys encryption, and local cache controls.`
    - **Visibility**: Public (or Private if preferred)
    - ⚠️ **DO NOT** initialize with README, .gitignore, or license (we already have these)
 4. Click **Create repository**
@@ -181,7 +181,6 @@ After deploying to Vercel/Netlify, add the live URL to:
 - ✅ `DEPLOYMENT.md` - Deployment guide
 - ✅ `AI_DEVELOPMENT_LOG.md` - AI contribution log
 - ✅ `PRESENTATION_GUIDE.md` - Presentation guide
-- ✅ `PROJECT_SUMMARY.md` - Project summary
 - ✅ `CONTRIBUTING.md` - Contribution guidelines
 - ✅ `GITHUB_UPLOAD.md` - This guide
 
