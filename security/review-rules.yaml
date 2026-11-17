@@ -1,0 +1,18 @@
+rules:
+  - id: javascript-no-eval
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Dynamic JavaScript evaluation requires removal or independent security review.
+    pattern-either:
+      - pattern: eval(...)
+      - pattern: new Function(...)
+  - id: react-no-raw-html
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Publisher content must be rendered as text, not raw HTML.
+    pattern: <$TAG dangerouslySetInnerHTML={...} ... />
+  - id: browser-no-compiled-provider-key
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: Do not compile provider API keys from Vite environment variables.
+    pattern-regex: 'import\.meta\.env\.VITE_[A-Z_]*(KEY|TOKEN|SECRET)'

@@ -2,6 +2,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+
+test('environment variants are ignored while the documented example remains publishable', () => {
+  for (const path of ['.env', '.env.local', '.env.production', '.env.development', '.env.staging', '.env.test']) {
+    assert.equal(spawnSync('git', ['check-ignore', '--no-index', path], { cwd: root }).status, 0, `${path} must be ignored`);
+  }
+  assert.equal(spawnSync('git', ['check-ignore', '--no-index', '.env.example'], { cwd: root }).status, 1);
+});
 
 const root = resolve(import.meta.dirname, '..');
 

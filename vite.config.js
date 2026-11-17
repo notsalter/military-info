@@ -8,5 +8,8 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
+    include: ['src/**/*.test.{js,jsx}', 'server/**/*.test.js'],
+    setupFiles: ['./vitest.setup.js'],
+    environmentOptions: { jsdom: { url: 'http://localhost:5173' } },
   },
 })
