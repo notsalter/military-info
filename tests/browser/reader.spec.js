@@ -194,6 +194,72 @@ test('curation disclaimer remains visible in the reader and article drawer', asy
   await expect(page.getByRole('dialog')).toContainText(CURATION_DISCLAIMER);
 });
 
+for (const format of ['legacy', 'changed-headline']) {
+  test(`${format} deep link resolves genuine feed text and retains Back/Forward membership`, async ({ page }) => {
+    await stubFeeds(page);
+    const item = fixture.items[0];
+    const current = getArticlePath({ title: item.title, url: item.link, source: fixtureFeeds[0] });
+    const route = format === 'legacy' ? `/article/${fixtureFeeds[0].id}/${btoa(item.link).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}` : current.replace('test-fixture-defense-news-naval-ship-review', 'test-fixture-old-headline');
+    await page.goto('/?fixture=readable#news');
+    await expect(page.getByRole('link', { name: item.title })).toBeVisible();
+    await page.evaluate(route => {
+      history.pushState({ militaryInfoArticle: { path: route, listingURL: '/?fixture=readable#news' } }, '', route);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, route);
+    const dialog = page.getByRole('dialog', { name: item.title });
+    await expect(dialog).toBeVisible();
+    await expect(page.getByRole('link', { name: /Read at/ })).toHaveAttribute('href', item.link);
+    await page.getByRole('button', { name: 'Close article' }).click();
+    await expect(page).toHaveURL(`${localOrigin}/?fixture=readable#news`);
+    await expect(dialog).toHaveCount(0);
+    await page.goForward();
+    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(`${localOrigin}${route}`);
+    await page.reload();
+    await expect(dialog).toBeVisible();
+    await expect(page).toHaveURL(`${localOrigin}${route}`);
+  });
+}
+
+for (const format of ['legacy', 'short']) {
+  for (const collection of ['live-only', 'saved-only', 'overlap']) {
+    test(`settled unseen ${format} history resolves ${collection} with native Back and Forward`, async ({ page }) => {
+      const item = fixture.items[0];
+      const saved = { title: 'TEST FIXTURE saved naval headline', description: 'TEST FIXTURE saved naval preview', url: item.link, source: fixtureFeeds[0], publishedAt: '2026-01-01T00:00:00.000Z' };
+      if (collection !== 'live-only') await page.addInitScript(saved => {
+        localStorage.setItem('military_bookmarks', JSON.stringify({ version: 1, articles: [saved] }));
+      }, saved);
+      await stubFeeds(page, { feeds: collection === 'saved-only' ? [] : fixtureFeeds });
+      const listingURL = '/?fixture=overlap#news';
+      await page.goto(listingURL);
+      await expect(page.locator('.loading-state')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: `Saved articles (${collection === 'live-only' ? 0 : 1})` })).toBeVisible();
+      const current = getArticlePath({ title: item.title, url: item.link, source: fixtureFeeds[0] });
+      const route = format === 'legacy' ? `/article/${fixtureFeeds[0].id}/${btoa(item.link).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}` : current;
+      await page.evaluate(({ route, listingURL }) => {
+        history.pushState({ militaryInfoArticle: { path: route, listingURL } }, '', route);
+        dispatchEvent(new PopStateEvent('popstate'));
+      }, { route, listingURL });
+      const preferredTitle = collection === 'saved-only' ? saved.title : item.title;
+      const dialog = page.getByRole('dialog', { name: preferredTitle });
+      await expect(dialog).toBeVisible();
+      expect(await dialog.evaluate(element => element.matches(':modal'))).toBe(true);
+      await expect(dialog).toContainText(collection === 'saved-only' ? saved.description : item.description);
+      await expect(dialog.getByRole('link', { name: /Read at/ })).toHaveAttribute('href', item.link);
+      await expect(page).toHaveURL(`${localOrigin}${route}`);
+      await page.getByRole('button', { name: 'Close article' }).click();
+      await expect(page).toHaveURL(`${localOrigin}${listingURL}`);
+      await expect(dialog).toHaveCount(0);
+      await page.goForward();
+      await expect(dialog).toBeVisible();
+      await expect(page).toHaveURL(`${localOrigin}${route}`);
+      await page.goBack();
+      await expect(dialog).toHaveCount(0);
+      await expect(page).toHaveURL(`${localOrigin}${listingURL}`);
+    });
+  }
+}
+
 test('first-party headline, clipboard and browser history keep visitors on the curated site', async ({ page }) => {
   await page.addInitScript(() => {
     window.__testCopied = [];
@@ -201,7 +267,8 @@ test('first-party headline, clipboard and browser history keep visitors on the c
   });
   await stubFeeds(page); await page.goto('/');
   const headline = page.getByRole('link', { name: fixture.items[0].title });
-  const path = getArticlePath({ url: fixture.items[0].link, source: fixtureFeeds[0] });
+  const path = getArticlePath({ title: fixture.items[0].title, url: fixture.items[0].link, source: fixtureFeeds[0] });
+  expect(path).toMatch(/^\/article\/defense-news\/test-fixture-defense-news-naval-ship-review~[a-f0-9]{16}$/);
   await expect(headline).toHaveAttribute('href', path);
   await tabTo(page, headline); await page.keyboard.press('Enter');
   const dialog = page.getByRole('dialog', { name: fixture.items[0].title });
@@ -228,7 +295,7 @@ test('clipboard rejection exposes a selectable first-party URL without false suc
   await page.getByRole('button', { name: 'Copy link', exact: true }).click();
   const field = page.getByLabel('Military Info share link');
   await expect(field).toBeVisible();
-  await expect(field).toHaveValue(`${localOrigin}${getArticlePath({ url: fixture.items[0].link, source: fixtureFeeds[0] })}`);
+  await expect(field).toHaveValue(`${localOrigin}${getArticlePath({ title: fixture.items[0].title, url: fixture.items[0].link, source: fixtureFeeds[0] })}`);
   await expect(field).toHaveAttribute('readonly', '');
   await expect(page.getByText(/link copied/i)).toHaveCount(0);
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
@@ -397,7 +464,7 @@ test('separate history entries for the same article retain their own listing scr
 
 test('direct article route Close and Escape use the no-history listing fallback', async ({ page }) => {
   await stubFeeds(page);
-  const path = getArticlePath({ url: fixture.items[0].link, source: fixtureFeeds[0] });
+  const path = getArticlePath({ title: fixture.items[0].title, url: fixture.items[0].link, source: fixtureFeeds[0] });
   for (const exit of ['Close', 'Escape']) {
     await page.goto(path);
     await expect(page.getByRole('dialog', { name: fixture.items[0].title })).toBeVisible();

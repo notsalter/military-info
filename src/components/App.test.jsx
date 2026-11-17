@@ -5,6 +5,7 @@ import App from '../App';
 import { fetchNews } from '../services/newsApi';
 import { readBookmarks, removeBookmark, saveBookmarks } from '../services/storage';
 import { FEEDS } from '../services/feeds';
+import { getArticlePath } from '../services/articleLinks';
 import { readFileSync } from 'node:fs';
 import { cwd } from 'node:process';
 import { Buffer } from 'node:buffer';
@@ -33,6 +34,108 @@ beforeEach(() => {
 
 const registeredNavy = { ...navy, source: { id: FEEDS[0].id, name: FEEDS[0].name, url: FEEDS[0].url } };
 const registeredPath = `/article/${FEEDS[0].id}/${Buffer.from(registeredNavy.url).toString('base64url')}`;
+const readablePath = getArticlePath(registeredNavy);
+
+it('resolves a settled unseen legacy route for an article present in both live and saved collections', async () => {
+  readBookmarks.mockReturnValue([{ ...registeredNavy }]);
+  fetchNews.mockResolvedValue(result([{ ...registeredNavy }]));
+  const view = render(<App />);
+  await screen.findByRole('link', { name: registeredNavy.title });
+  await waitFor(() => expect(view.container.querySelector('.loading-state')).toBeNull());
+  await act(async () => {
+    window.history.pushState(null, '', registeredPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+});
+
+it.each(['legacy', 'short'])('resolves settled unseen %s history with live-only, saved-only and overlapping metadata', async format => {
+  const live = { ...registeredNavy, title: 'TEST FIXTURE live navy headline', description: 'TEST FIXTURE live preview', publishedAt: '2026-01-04T00:00:00.000Z' };
+  const saved = { ...registeredNavy, title: 'TEST FIXTURE saved navy headline', description: 'TEST FIXTURE saved preview', publishedAt: '2026-01-02T00:00:00.000Z' };
+  const path = format === 'legacy' ? registeredPath : readablePath;
+  for (const collection of ['live-only', 'saved-only', 'overlap']) {
+    window.history.replaceState(null, '', '/');
+    readBookmarks.mockReturnValue(collection === 'live-only' ? [] : [saved]);
+    fetchNews.mockResolvedValue(result(collection === 'saved-only' ? [] : [live]));
+    const view = render(<App />);
+    await waitFor(() => expect(view.container.querySelector('.loading-state')).toBeNull());
+    await act(async () => {
+      window.history.pushState(null, '', path);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    });
+    const preferred = collection === 'saved-only' ? saved : live;
+    const dialog = screen.getByRole('dialog', { name: preferred.title });
+    expect(within(dialog).getByText(preferred.description)).toBeInTheDocument();
+    expect(within(dialog).getByRole('link', { name: /Read at/ })).toHaveAttribute('href', preferred.url);
+    expect(window.location.pathname).toBe(path);
+    view.unmount();
+  }
+});
+
+it.each(['legacy', 'short'])('does not resolve settled unseen %s history from a copied id with a different actual URL or source', async format => {
+  readBookmarks.mockReturnValue([{ ...registeredNavy, url: 'https://example.test/different-url' }]);
+  fetchNews.mockResolvedValue(result([{ ...registeredNavy, source: FEEDS[1] }]));
+  const view = render(<App />);
+  await waitFor(() => expect(view.container.querySelector('.loading-state')).toBeNull());
+  const path = format === 'legacy' ? registeredPath : readablePath;
+  await act(async () => {
+    window.history.pushState(null, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe(path);
+});
+
+it.each(['legacy', 'short'])('keeps ambiguous live rows rejected on settled unseen %s history despite a saved copy', async format => {
+  readBookmarks.mockReturnValue([{ ...registeredNavy }]);
+  fetchNews.mockResolvedValue(result([registeredNavy, { ...registeredNavy, title: 'TEST FIXTURE conflicting live navy headline' }]));
+  const view = render(<App />);
+  await waitFor(() => expect(view.container.querySelector('.loading-state')).toBeNull());
+  const path = format === 'legacy' ? registeredPath : readablePath;
+  await act(async () => {
+    window.history.pushState(null, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it.each(['saved', 'progress', 'recovery', 'popstate'])('resolves a changed-headline short route through %s and preserves its exact history membership', async origin => {
+  const oldPath = readablePath.replace('test-fixture-navy-procurement', 'test-fixture-old-headline');
+  const changed = { ...registeredNavy, title: 'TEST FIXTURE current genuine headline' };
+  const listingURL = '/?fixture=readable#news';
+  window.history.replaceState(null, '', listingURL);
+  if (origin !== 'popstate') window.history.pushState({ militaryInfoArticle: { path: oldPath, listingURL } }, '', oldPath);
+  const pending = deferred();
+  fetchNews.mockReturnValue(pending.promise);
+  if (origin === 'saved') readBookmarks.mockReturnValue([changed]);
+  if (origin === 'recovery') readBookmarks.mockReturnValueOnce(Object.defineProperty([], 'storageError', { value: 'TEST FIXTURE denied' })).mockReturnValue([changed]);
+  const user = userEvent.setup();
+  render(<App />);
+  if (origin === 'progress' || origin === 'popstate') await act(async () => fetchNews.mock.calls[0][2].onProgress(result([changed])));
+  if (origin === 'popstate') await act(async () => {
+    window.history.pushState({ militaryInfoArticle: { path: oldPath, listingURL } }, '', oldPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  if (origin === 'recovery') await user.click(screen.getByRole('button', { name: 'Retry saved articles' }));
+  const dialog = screen.getByRole('dialog', { name: changed.title });
+  await act(async () => pending.resolve(result([ground])));
+  if (origin === 'saved' || origin === 'recovery') await user.click(within(dialog).getByRole('button', { name: 'Remove saved article' }));
+  expect(screen.getByRole('dialog', { name: changed.title })).toBe(dialog);
+  expect(window.location.pathname).toBe(oldPath);
+  await user.click(within(dialog).getByRole('button', { name: 'Close article' }));
+  await waitFor(() => expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(listingURL));
+  await act(async () => window.history.forward());
+  expect(await screen.findByRole('dialog', { name: changed.title })).toBeInTheDocument();
+  expect(window.location.pathname).toBe(oldPath);
+});
+
+it('fails closed instead of selecting the first ambiguous route record', async () => {
+  window.history.replaceState(null, '', readablePath);
+  fetchNews.mockResolvedValue(result([registeredNavy, { ...registeredNavy, title: 'TEST FIXTURE conflicting article' }]));
+  render(<App />);
+  await screen.findByRole('link', { name: registeredNavy.title });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
 
 it('retains an initially resolved article while progressive results evict it from the listing', async () => {
   window.history.replaceState(null, '', registeredPath);
@@ -291,7 +394,7 @@ it('updates the address bar when a registered headline opens and returns to its 
   render(<App />);
   const headline = await screen.findByRole('link', { name: registeredNavy.title });
   await user.click(headline);
-  expect(window.location.pathname).toBe(registeredPath);
+  expect(window.location.pathname).toBe(readablePath);
   expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
   expect(push).toHaveBeenCalledTimes(1);
   await user.click(screen.getByRole('button', { name: 'Close article' }));
@@ -327,7 +430,7 @@ it('closes on browser Back and restores the known article on Forward without add
   expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
   await act(async () => window.history.forward());
   expect(await screen.findByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
-  expect(window.location.pathname).toBe(registeredPath);
+  expect(window.location.pathname).toBe(readablePath);
   expect(push).not.toHaveBeenCalled();
 });
 
