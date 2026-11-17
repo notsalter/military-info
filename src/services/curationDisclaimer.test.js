@@ -1,0 +1,6 @@
+import { expect, it } from 'vitest';
+import * as disclaimer from './curationDisclaimer.js';
+
+it('clearly identifies curation, original rights and source context without legal guarantees', () => {
+  expect(disclaimer.CURATION_DISCLAIMER).toBe('Military Info curates headlines and short previews from third-party sources; we do not produce the original reporting. Original articles and images belong to their respective rights holders. Inclusion is not an endorsement. Read the linked publisher for full context and updates.');
+});

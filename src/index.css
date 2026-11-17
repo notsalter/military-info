@@ -56,7 +56,7 @@ main h2 { font-size: clamp(1.7rem, 3vw, 2.2rem); padding-block: 1rem; border-top
 .article-meta a { min-height: 44px; display: inline-flex; align-items: center; }
 .article-meta time { font-family: var(--mono); font-size: 0.75rem; }
 .article-card h3 { font-size: clamp(1.45rem, 2vw, 1.75rem); margin-block: 0.45rem 0.65rem; }
-.headline-button { display: block; padding: 0; width: 100%; text-align: left; border: 0; border-radius: 0; font: inherit; line-height: 1.22; background: transparent; overflow-wrap: anywhere; }
+.headline-button { display: block; padding: 0; width: 100%; min-height: 44px; text-align: left; border: 0; border-radius: 0; font: inherit; line-height: 1.22; background: transparent; overflow-wrap: anywhere; text-decoration: none; }
 .headline-button:hover { color: var(--mineral); }
 .article-description { color: var(--stone); font-size: 0.9375rem; line-height: 1.65; }
 .category-label { color: var(--stone); font: 0.75rem/1.5 var(--mono); margin-top: 0.9rem; }
@@ -79,6 +79,10 @@ footer p { max-width: 48ch; }
 .preview-note { font-size: 0.8125rem; color: var(--stone); }
 .dialog-actions { display: flex; flex-wrap: wrap; gap: 0.65rem; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--rule); }
 .dialog-actions > * { flex: 1 1 10rem; }
+.share-article { margin-top: 1.25rem; }
+.share-article > [role] { margin-top: 0.75rem; }
+.share-link { margin-top: 1rem; }
+.share-link input { width: 100%; }
 .settings-form label { margin-top: 1.2rem; }
 .settings-form > [role] { margin-top: 1rem; }
 .storage-warning { color: var(--mineral); font-size: 0.875rem; }
