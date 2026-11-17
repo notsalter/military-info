@@ -1,61 +1,9 @@
-# 🤖 AI Development Log - Military Info Command Center
+# Development notes
 
-## Project Overview
-**Project Name**: Military Info  
-**Type**: Static Single Page Application (News Aggregator)  
-**AI Assistant**: Antigravity (Advanced Agentic Coding Agent)  
-**Development Time**: Interactive Session  
-**Last Updated**: June 14, 2026
+The previous version of this document assigned AI contribution percentages and described encrypted local storage, guaranteed legal compliance, and a production archive of fictional reports. Those claims were unsupported and are not a record of verified behavior.
 
----
+The current implementation is documented in the [technical reference](TECHNICAL_DOCS.md). It uses shared article normalization, bounded feed requests, validated browser caches and bookmarks, explicit failure states, and optional plain-text browser-stored provider keys. Test fixtures are not production news.
 
-## AI Contributions Summary
-This log covers the human-AI collaboration during the refactoring session to transform a basic aggregator into a premium, secure, and copyright-compliant Tactical Command Center dashboard.
+The user approved repository repairs and a Vercel deployment goal. Malicious files were removed in containment commit `aea679c`, and the hostile remote workflows were disabled. That containment does not resolve historical computer or credential exposure. See [security status](SECURITY.md).
 
----
-
-## 1. Project Refactoring & Security (AI Contribution: 90%)
-
-### What AI Helped With:
-- **Securing Keys:** Conceived the move away from compiled environment variables to an in-app browser configuration saved in `localStorage`, protecting secrets from leak.
-- **Keyless Operations:** Redesigned the data layer to degrade gracefully when keys are omitted, falling back automatically to public feeds or offline archives.
-- **XML Fallback RSS Parser:** Coded a custom fallback parser using Allorigins CORS proxy and native browser `DOMParser` to process feeds client-side.
-
----
-
-## 2. Advanced React Components (AI Contribution: 95%)
-
-### `SettingsModal.jsx` (100% AI)
-- Form controls for custom browser-cached NewsAPI/TheNewsAPI keys.
-- Cache flushing triggers and key clearing helpers.
-
-### `ArticleDrawer.jsx` (95% AI)
-- Created the slide-out visual inspection overlay.
-- Integrated bookmark toggles synced with `localStorage`.
-- Appended the copyright disclaimer notice.
-- Coded simple keyword check categorizer.
-
-### `ArticleCard.jsx` & `Loading.jsx` (90% AI)
-- Rewrote layouts to align with dark HUD styles.
-- Created radar reticle vectors and customized category SVG fallbacks if image endpoints fail.
-
----
-
-## 3. Pagination & Performance (AI Contribution: 85%)
-- Designed client-side display pagination (fetching a larger pool of 60 articles in the service, while displaying only 12 initially).
-- Appended the **[ LOAD MORE INTEL REPORTS ]** increment controls.
-- Configured pagination counts to reset automatically on category switches or bookmarks view toggles.
-
----
-
-## AI vs Human Contribution Breakdown
-
-| Feature | AI % | Human % | Key Accomplishments |
-|---------|------|---------|---------------------|
-| **Tactical Theme styling** | 80% | 20% | Custom keyframe animations, glows, and grids |
-| **Secure Key Storage** | 95% | 5% | Browser local storage helpers |
-| **Dual RSS Fallback Parser** | 95% | 5% | Native DOMParser XML and Atom compiler |
-| **Settings & Drawer Components** | 90% | 10% | Modal forms, slide-overs, bookmarks hook |
-| **Pagination Button** | 90% | 10% | Sliced arrays, increment triggers, state resets |
-| **Legal Compliance Footer** | 95% | 5% | DMCA policy and fair use limits |
-| **Verification Tests** | 90% | 10% | Adapt vitest runs with test-mode bypass |
+This file does not certify AI authorship percentages, performance benchmarks, browser-wide feed health, completed credential rotation, or a successful deployment. Verification results belong with the output of the exact test/build/deployment run; do not copy earlier counts as if they describe a later revision.

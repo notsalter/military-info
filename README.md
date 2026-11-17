@@ -1,125 +1,49 @@
-# 🎖️ Military Info - Tactical Command Center & News Aggregator
+# Military Info
 
-**Military Info** adalah portal agregator berita militer, pertahanan, dan geopolitik modern. Aplikasi ini dirancang sebagai dashboard taktis (Tactical HUD) dengan performa tinggi yang menggabungkan umpan dari API berita dan puluhan saluran RSS internasional secara aman, responsif, dan legal.
+Military Info is a browser-based reader for military, defense, and geopolitics news. It shows publisher headlines and short previews, with links to the original articles. React and Vite build the UI to `dist/`; the existing Vercel project also runs one fixed-registry feed function. There is no account system or database.
 
-[![React](https://img.shields.io/badge/React-19.1-61DAFB?logo=react&logoColor=white)](https://react.dev)
-[![Vite](https://img.shields.io/badge/Vite-7.1-646CFF?logo=vite&logoColor=white)](https://vite.dev)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-3.4-06B6D4?logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+## Read and save news
 
----
+- Search the fetched collection by topic, place, or publisher; filter by topic and publisher and sort by date or headline.
+- Open a headline to inspect its preview and choose **Read at** to visit the publisher.
+- Use **Save article** and **Saved articles** for bookmarks stored in this browser. They do not sync between devices or include full articles.
+- **Show more articles** displays another batch of 12 from the loaded collection. It does not fetch another page from publishers.
+- Open **Sources** for the configured feed register and request results. Configured feeds are not a promise that every source works in every browser.
 
-## 📋 Daftar Isi
-- [Fitur Utama](#-fitur-utama)
-- [Teknologi yang Digunakan](#-teknologi-yang-digunakan)
-- [Instalasi dan Setup](#-instalasi-dan-setup)
-- [Konfigurasi Kredensial](#-konfigurasi-kredensial)
-- [Struktur Proyek](#-struktur-proyek)
-- [Hak Cipta & Kebijakan Fair Use](#-hak-cipta--kebijakan-fair-use)
-- [Lisensi](#-lisensi)
+## Run locally
 
----
+Use Node.js **22.12.0 or later** and npm, from a reviewed checkout:
 
-## ✨ Fitur Utama
-
-### 1. **Tactical Glassmorphic HUD**
-Antarmuka premium bertema gelap (*tactical dark mode*) yang dilengkapi dengan efek glassmorphism, visual scanner radar animatif, dan tipografi modern dari Google Fonts (`Outfit` & `JetBrains Mono`).
-
-### 2. **21 Saluran Umpan RSS Taktis**
-Agregasi umpan real-time dari 21 sumber berita militer dan pertahanan global terkemuka (termasuk Defense News, Military Times, Breaking Defense, US Dept of Defense, US Navy, US Air Force, US Army Combat, UK MoD News, dan portal teknologi pertahanan lainnya).
-
-### 3. **Penyaringan Konten Berlapis (Intelligent Filtering)**
-Sistem pemfilteran otomatis dengan pencocokan kata kunci militer positif (40+ istilah) dan pengecualian kata kunci non-militer negatif (60+ istilah olahraga, gaya hidup, dll.) untuk menjamin kemurnian konten pertahanan.
-
-### 4. **Keyless Operation & Credential Shielding**
-Kunci API NewsAPI dan TheNewsAPI dikonfigurasi secara lokal melalui antarmuka **⚙️ System Config** di browser (disimpan di `localStorage`). Pengguna dapat menjalankan portal tanpa mengisi kredensial apa pun (menggunakan umpan RSS publik) untuk mencegah kebocoran kunci di server hosting publik (Vercel/Netlify).
-
-### 5. **Resilience & Offline Database Fallback**
-Jika koneksi internet gagal atau API dibatasi kuota, sistem akan otomatis melakukan peralihan bertahap:
-- Mengambil cached data (caching 15 menit).
-- Mengambil umpan RSS via CORS proxy (`allorigins`).
-- Memuat **Local Offline Archive** berisi artikel-artikel militer berkualitas tinggi yang terintegrasi di dalam aplikasi.
-
-### 6. **Article Inspection Drawer & Bookmarks**
-Klik pada kartu artikel untuk membuka panel laci samping (drawer) yang menampilkan preview ringkas, kategorisasi taktis (Naval, Aerospace, Ground, Cyber, Geopolitics), dan opsi bookmarking lokal.
-
-### 7. **Load More Pagination**
-Memungkinkan pengguna memuat berita secara bertahap (12 artikel per klik) untuk performa memori browser yang optimal dan mengurangi pemborosan transfer data.
-
----
-
-## 🛠️ Teknologi yang Digunakan
-
-| Teknologi | Versi | Deskripsi |
-|-----------|-------|-----------|
-| **React.js** | 19.1 | Pembangunan antarmuka UI komponen |
-| **Vite** | 7.1 | Build tool ultra cepat dengan support Vitest |
-| **Tailwind CSS** | 3.4 | Utilitas styling visual dengan animasi kustom |
-| **Axios** | 1.12 | HTTP Client penanganan request API |
-| **DOMParser** | Native | XML Parser bawaan browser untuk fallback RSS |
-
----
-
-## 📦 Instalasi dan Setup
-
-1. **Clone repositori:**
-   ```bash
-   git clone https://github.com/notsalter/military-info.git
-   cd military-info
-   ```
-2. **Install dependensi:**
-   ```bash
-   npm install
-   ```
-3. **Jalankan server pengembangan:**
-   ```bash
-   npm run dev
-   ```
-   Buka alamat local yang disediakan di terminal: **http://localhost:5173**
-
----
-
-## 🔑 Konfigurasi Kredensial
-Untuk menambahkan API Key NewsAPI/TheNewsAPI:
-1. Buka aplikasi di browser.
-2. Klik tombol **⚙️ SYSTEM CONFIG** di header.
-3. Masukkan kunci Anda dan klik **Apply Changes**. Kunci disimpan secara aman di browser Anda.
-
----
-
-## 📁 Struktur Proyek
-```
-MilitaryInfo/
-├── public/                 # Aset statis
-├── src/
-│   ├── components/         # Komponen UI
-│   │   ├── ArticleCard.jsx      # Kartu artikel taktis
-│   │   ├── ArticleGrid.jsx      # Grid rendering & empty state
-│   │   ├── SearchBar.jsx        # Bar pencarian & query reset
-│   │   ├── SettingsModal.jsx    # Modal input kunci API
-│   │   ├── ArticleDrawer.jsx    # Laci preview artikel & disclaimer
-│   │   ├── Loading.jsx          # Animasi scanner reticle
-│   │   └── ErrorMessage.jsx     # Alert HUD merah
-│   ├── services/           # Logika data
-│   │   ├── newsApi.js           # Query aggregator, caching, filter, mock DB
-│   │   └── rssService.js        # Parser 21 RSS feeds & fallback CORS proxy
-│   ├── App.jsx             # Main dashboard controller
-│   ├── main.jsx             # React entry point
-│   └── index.css            # Custom fonts & keyframes CSS
-├── package.json            # Dependensi npm & script
-└── README.md               # Dokumentasi utama ini
+```bash
+npm ci --ignore-scripts
+npm run dev
 ```
 
----
+Open the local URL printed by Vite. No `.env` file or API key is required. See [setup and deployment](SETUP_INSTRUCTIONS.md) for testing, production builds, and the existing Vercel Git integration. Vercel should use Node.js **24.x**.
 
-## 🛡️ Hak Cipta & Kebijakan Fair Use
-Aplikasi ini mematuhi peraturan perlindungan hak cipta digital:
-1. **Batas Karakter Preview:** Teks deskripsi dibatasi maksimal 250 karakter untuk mematuhi kaidah *Fair Use* non-komersial untuk riset/studi pertahanan.
-2. **Attribution Terang:** Menampilkan nama penerbit secara eksplisit pada setiap kartu dan panel preview.
-3. **Outbound Redirects:** Tombol baca selengkapnya merujuk langsung ke URL situs penerbit resmi dengan tag keamanan `target="_blank" rel="noopener noreferrer"`.
-4. **Takedown Policy:** Pemilik konten dapat mengajukan permohonan pengecualian/penghapusan umpan berita dengan menghubungi kontak DMCA yang tertera di kaki aplikasi (*footer*).
+## Public feeds and optional keys
 
----
+Keyless mode uses `/api/feeds?id=<registered-id>` on Vercel. The function requests only configured public publisher URLs and returns short normalized previews; it does not accept arbitrary URLs. A local static Vite preview has no function, so the client falls back to keyless rss2json and direct XML where publisher CORS allows it. Availability depends on publisher responses, service quotas, and network access. Search covers fetched snippets, not the publisher's entire archive. No full-article scraping or paywall bypass is implemented.
 
-## 📄 Lisensi
-Tersedia di bawah lisensi [MIT License](LICENSE).
+Optional NewsAPI and TheNewsAPI keys can be entered in **Settings**. They are stored in plain text in browser `localStorage`, not encrypted, and sent directly to the respective provider. Scripts running on the same origin, browser extensions with permission, and people with access to that browser may read them. Masked inputs do not protect stored keys. Avoid shared devices and do not place provider keys in `VITE_*` variables, source files, or deployment settings. Provider plans and browser-origin restrictions can still prevent requests.
+
+Vercel requests the feed from its servers in deployed keyless mode; local fallback feed services and publisher image hosts receive browser requests. Keyless does not mean private or independent of third parties. The existing project uses the free Hobby plan, with usage allowances; exceeding them can pause service.
+
+## Cache, freshness, and previews
+
+News pools are reused for 15 minutes. Older validated snippets, up to seven days old, may be shown while refreshing or when live requests fail; the app warns when it returns stale cached results. This age describes fetching, not the publication date or factual accuracy of an article. **Settings → Clear news cache** forces a new request without deleting saved articles or optional keys. Browser storage can be blocked, full, or cleared.
+
+Descriptions are plain text, limited to **250 characters including any trailing ellipsis**, in rendered previews and stored article records. Publisher attribution and source links remain. This is a product policy, not a guarantee of fair use, licensing, or copyright compliance. Publisher terms still apply. The app does not provide a DMCA contact or a full offline article archive; fictional examples belong only in tests.
+
+## Security status
+
+Malicious repository files were removed in containment commit `aea679c`, and the hostile remote workflows were disabled. This does **not** establish that previously used computers or credentials are safe. Device exposure, credential exposure, and rotation status remain unresolved. Do not add new credentials on an affected device until that exposure has been assessed. Read the [security note](docs/SECURITY.md) before using an older checkout or deploying.
+
+## Documentation
+
+- [Setup, commands, and Vercel deployment](SETUP_INSTRUCTIONS.md)
+- [Data flow and implementation limits](docs/TECHNICAL_DOCS.md)
+- [Demonstration checklist](docs/PRESENTATION_GUIDE.md)
+- [Documentation index](docs/INDEX.md)
+
+Project code is licensed under [MIT](LICENSE). Publisher content has its own rights and terms.
