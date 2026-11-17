@@ -4,7 +4,8 @@
   "buildCommand": "npm run build",
   "installCommand": "npm ci --ignore-scripts --no-audit --no-fund",
   "outputDirectory": "dist",
-  "functions": { "api/feeds.js": { "maxDuration": 10 } },
+  "functions": { "api/feeds.js": { "maxDuration": 10 }, "api/article.js": { "maxDuration": 10 } },
+  "rewrites": [{ "source": "/article/:feed([a-z0-9-]{1,100})/:article([A-Za-z0-9_-]{1,2800})", "destination": "/api/article?feed=:feed&article=:article" }],
   "headers": [{
     "source": "/(.*)",
     "headers": [

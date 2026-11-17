@@ -178,6 +178,179 @@ it('normalizes selected fallback text only once', () => {
   expect(parseFeed(xml, feed)[0].description).toBe('Army &amp; Navy update');
 });
 
+it('TEST FIXTURE restores the reported qualified Atom href', () => {
+  const xml = '<a:feed xmlns:a="http://www.w3.org/2005/Atom"><a:entry><a:title>TEST FIXTURE Army</a:title><a:link a:href="https://www.defensenews.com/test-fixture/correct"/></a:entry></a:feed>';
+  expect(parseFeed(xml, feed).map(article => article.url)).toEqual(['https://www.defensenews.com/test-fixture/correct']);
+});
+
+it('TEST FIXTURE skips the reported qualified Atom self relation', () => {
+  const xml = '<a:feed xmlns:a="http://www.w3.org/2005/Atom"><a:entry><a:title>TEST FIXTURE Army</a:title><a:link a:rel="self" href="https://www.defensenews.com/test-fixture/metadata"/><a:link rel="alternate" href="https://www.defensenews.com/test-fixture/correct"/></a:entry></a:feed>';
+  expect(parseFeed(xml, feed).map(article => article.url)).toEqual(['https://www.defensenews.com/test-fixture/correct']);
+});
+
+it.each(['base', 'a:base'])('TEST FIXTURE restores Atom root %s compatibility without rebasing images', attribute => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:m="http://search.yahoo.com/mrss/" ${attribute}="https://www.defensenews.com/test-fixture/"><a:entry>
+    <a:title>TEST FIXTURE Army</a:title><a:link href="correct"/><m:thumbnail url="photo.jpg"/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed)).toMatchObject([{
+    url: 'https://www.defensenews.com/test-fixture/correct', urlToImage: 'https://example.org/photo.jpg',
+  }]);
+});
+
+it.each(['base', 'a:base'])('TEST FIXTURE restores Atom entry %s compatibility against its inherited XML base', attribute => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:m="http://search.yahoo.com/mrss/" xml:base="https://www.defensenews.com/test-fixture/"><a:entry ${attribute}="articles/">
+    <a:title>TEST FIXTURE Army</a:title><a:link a:href="correct"/><m:thumbnail url="photo.jpg"/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed)).toMatchObject([{
+    url: 'https://www.defensenews.com/test-fixture/articles/correct', urlToImage: 'https://www.defensenews.com/test-fixture/photo.jpg',
+  }]);
+});
+
+it.each(['base', 'a:base'])('TEST FIXTURE restores Atom link %s compatibility against its inherited XML base', attribute => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:m="http://search.yahoo.com/mrss/" xml:base="https://www.defensenews.com/test-fixture/"><a:entry xml:base="articles/">
+    <a:title>TEST FIXTURE Army</a:title><a:link a:rel="self" ${attribute}="https://metadata.example.org/" href="metadata"/>
+    <a:link a:rel="alternate" ${attribute}="../" a:href="correct"/><m:thumbnail url="photo.jpg"/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed)).toMatchObject([{
+    url: 'https://www.defensenews.com/test-fixture/correct', urlToImage: 'https://www.defensenews.com/test-fixture/articles/photo.jpg',
+  }]);
+});
+
+it.each([
+  ['href before qualified href', 'href="/metadata" a:href="/correct"', '/correct'],
+  ['qualified href before href', 'a:href="/metadata" href="/correct"', '/correct'],
+  ['different qualified hrefs', 'a:href="/metadata" other:href="/correct"', '/correct'],
+])('TEST FIXTURE retains baseline last-attribute priority for %s', (_case, attributes, path) => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:other="https://other.example.org/"><a:entry>
+    <a:title>TEST FIXTURE Army</a:title><a:link ${attributes}/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed).map(article => article.url)).toEqual([`https://example.org${path}`]);
+});
+
+it.each([
+  ['qualified alternate', 'a:rel="alternate"', 'correct'],
+  ['empty qualified relation', 'a:rel=""', 'correct'],
+  ['foreign-qualified alternate', 'other:rel="alternate"', 'correct'],
+  ['plain self then qualified alternate', 'rel="self" a:rel="alternate"', 'correct'],
+  ['qualified self then plain alternate', 'a:rel="self" rel="alternate"', 'correct'],
+  ['plain alternate then qualified self', 'rel="alternate" a:rel="self"', 'fallback'],
+  ['qualified alternate then plain self', 'a:rel="alternate" rel="self"', 'fallback'],
+  ['whitespace-qualified alternate', 'a:rel=" alternate "', 'fallback'],
+])('TEST FIXTURE retains baseline link selection for %s', (_case, attributes, path) => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:other="https://other.example.org/"><a:entry>
+    <a:title>TEST FIXTURE Army</a:title><a:link ${attributes} a:href="/${path === 'fallback' ? 'metadata' : 'correct'}"/>
+    <a:link a:href="/fallback"/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed).map(article => article.url)).toEqual([`https://example.org/${path}`]);
+});
+
+it.each(['root', 'entry', 'link'].flatMap(level => [
+  ['xml:base="/xml/" a:base="/article/"', 'article'],
+  ['a:base="/article/" xml:base="/xml/"', 'xml'],
+].map(([attributes, path]) => [level, attributes, path])))('TEST FIXTURE retains baseline last-base priority at Atom %s: %s', (level, attributes, path) => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:m="http://search.yahoo.com/mrss/" ${level === 'root' ? attributes : ''}>
+    <a:entry ${level === 'entry' ? attributes : ''}><a:title>TEST FIXTURE Army</a:title>
+      <a:link ${level === 'link' ? attributes : ''} a:href="correct"/><m:thumbnail url="photo.jpg"/>
+    </a:entry>
+  </a:feed>`;
+  expect(parseFeed(xml, feed)).toMatchObject([{
+    url: `https://example.org/${path}/correct`, urlToImage: level === 'link' ? 'https://example.org/photo.jpg' : 'https://example.org/xml/photo.jpg',
+  }]);
+});
+
+it.each(['root', 'entry', 'link'].flatMap(level => [
+  'ftp://example.org/articles/', 'javascript:fake', 'https://user:secret@example.org/articles/', 'http://[invalid',
+].map(base => [level, base])))('TEST FIXTURE rejects relative links after unsafe qualified Atom %s base %s', (level, base) => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" ${level === 'root' ? `a:base="${base}"` : 'xml:base="https://example.org/articles/"'}>
+    <a:entry ${level === 'entry' ? `a:base="${base}"` : ''}><a:title>TEST FIXTURE Army</a:title>
+      <a:link ${level === 'link' ? `a:base="${base}"` : ''} a:href="correct"/>
+    </a:entry>
+  </a:feed>`;
+  expect(parseFeed(xml, feed)).toEqual([]);
+});
+
+it.each(['root', 'entry', 'link'])('TEST FIXTURE inherits the parent when qualified Atom %s base is empty', level => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" ${level === 'root' ? 'a:base=""' : 'xml:base="https://example.org/articles/"'}>
+    <a:entry ${level === 'entry' ? 'a:base=""' : ''}><a:title>TEST FIXTURE Army</a:title>
+      <a:link ${level === 'link' ? 'a:base=""' : ''} a:href="correct"/>
+    </a:entry>
+  </a:feed>`;
+  expect(parseFeed(xml, feed).map(article => article.url)).toEqual([
+    level === 'root' ? 'https://example.org/correct' : 'https://example.org/articles/correct',
+  ]);
+});
+
+it.each(['ftp://example.org/story', 'javascript:fake', 'https://user:secret@example.org/story'])('TEST FIXTURE rejects unsafe qualified Atom href %s', href => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xml:base="https://example.org/articles/"><a:entry>
+    <a:title>TEST FIXTURE Army</a:title><a:link a:href="${href}"/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed)).toEqual([]);
+});
+
+it('TEST FIXTURE accepts a safe qualified absolute href independently of an unsafe inherited base', () => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" a:base="ftp://example.org/articles/"><a:entry>
+    <a:title>TEST FIXTURE Army</a:title><a:link a:href="https://www.defensenews.com/test-fixture/correct#section"/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed).map(article => article.url)).toEqual(['https://www.defensenews.com/test-fixture/correct']);
+});
+
+it('TEST FIXTURE does not read namespace declarations as Atom href attributes', () => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom"><a:entry>
+    <a:title>TEST FIXTURE Army</a:title><a:link xmlns:href="https://www.defensenews.com/test-fixture/metadata"/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed)).toEqual([]);
+});
+
+it('TEST FIXTURE ignores namespace declarations after real Atom rel and href attributes', () => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom"><a:entry>
+    <a:title>TEST FIXTURE Army</a:title><a:link a:rel="alternate" xmlns:rel="https://namespace.example.org/" a:href="/correct" xmlns:href="https://metadata.example.org/"/>
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed).map(article => article.url)).toEqual(['https://example.org/correct']);
+});
+
+it.each(['root', 'entry', 'link'])('TEST FIXTURE ignores xmlns:base after real Atom %s base attributes', level => {
+  const attributes = 'a:base="/articles/" xmlns:base="https://metadata.example.org/"';
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" ${level === 'root' ? attributes : ''}>
+    <a:entry ${level === 'entry' ? attributes : ''}><a:title>TEST FIXTURE Army</a:title>
+      <a:link ${level === 'link' ? attributes : ''} a:href="correct"/>
+    </a:entry>
+  </a:feed>`;
+  expect(parseFeed(xml, feed).map(article => article.url)).toEqual(['https://example.org/articles/correct']);
+});
+
+it.each([
+  '<m:thumbnail a:url="https://images.example.org/qualified.jpg"/>',
+  '<r:enclosure a:type="image/jpeg" url="https://images.example.org/qualified.jpg"/>',
+  '<m:thumbnail xmlns:m="https://not-media.example.org/" url="https://images.example.org/foreign.jpg"/>',
+  '<enclosure xmlns="https://not-rss.example.org/" type="image/jpeg" url="https://images.example.org/foreign.jpg"/>',
+])('TEST FIXTURE keeps image namespace/attribute validation separate from compatible article attributes: %s', image => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:m="http://search.yahoo.com/mrss/" xmlns:r="http://purl.org/rss/1.0/"><a:entry>
+    <a:title>TEST FIXTURE Army</a:title><a:link a:href="https://www.defensenews.com/test-fixture/correct"/>${image}
+  </a:entry></a:feed>`;
+  expect(parseFeed(xml, feed)).toMatchObject([{ url: 'https://www.defensenews.com/test-fixture/correct', urlToImage: null }]);
+});
+
+it('TEST FIXTURE preserves qualified-link article text, dates, order and exact image identity through repeated normalization', () => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:m="http://search.yahoo.com/mrss/" xmlns:h="http://www.w3.org/1999/xhtml" xml:base="https://www.defensenews.com/test-fixture/">
+    <item><m:thumbnail url="https://images.example.org/unrelated.jpg"/></item>
+    <a:entry a:base="articles/"><a:title>TEST FIXTURE Army <h:strong>denies</h:strong> retreat.</a:title>
+      <a:link a:rel="self" a:href="metadata"/><a:link a:rel="alternate" a:base="../" a:href="first"/>
+      <a:summary><h:div>Army <h:strong>denies</h:strong> reports.<h:script>Not public</h:script></h:div></a:summary>
+      <a:published>2026-11-14T23:59:59-05:30</a:published><m:thumbnail xml:base="https://images.example.org/assets/" url="first.jpg"/>
+    </a:entry>
+    <a:entry><a:title>TEST FIXTURE second Army</a:title><a:link a:href="second"/><a:updated>2026-11-14T24:00:00Z</a:updated>
+      <m:thumbnail xmlns:m="https://not-media.example.org/" url="https://images.example.org/foreign.jpg"/>
+    </a:entry>
+  </a:feed>`;
+  const articles = parseFeed(xml, feed);
+  expect(articles).toEqual([
+    { id: 'https://www.defensenews.com/test-fixture/first', title: 'TEST FIXTURE Army denies retreat.', description: 'Army denies reports.', url: 'https://www.defensenews.com/test-fixture/first', urlToImage: 'https://images.example.org/assets/first.jpg', publishedAt: '2026-11-15T05:29:59.000Z', source: { id: feed.id, name: feed.name } },
+    { id: 'https://www.defensenews.com/test-fixture/second', title: 'TEST FIXTURE second Army', description: '', url: 'https://www.defensenews.com/test-fixture/second', urlToImage: null, publishedAt: null, source: { id: feed.id, name: feed.name } },
+  ]);
+  expect(articles.map(article => normalizeArticle(normalizeArticle(article)))).toEqual(articles);
+  expect(selectArticles(selectArticles(articles))).toEqual(articles);
+});
+
 it('resolves Atom relative links against the root xml:base', () => {
   const xml = `<feed xmlns="http://www.w3.org/2005/Atom" xml:base="https://example.org/articles/"><entry>
     <title>Army update</title><link href="story"/>
@@ -264,4 +437,131 @@ it('keeps the article and snippet caps, safe links, deduplication, and summary p
     expect(article.description).toHaveLength(250);
     expect(Object.keys(article).sort()).toEqual(['description', 'id', 'publishedAt', 'source', 'title', 'url', 'urlToImage']);
   }
+});
+
+it('TEST FIXTURE does not attach images from unrelated nested channel metadata to real feed items', () => {
+  const xml = `<rss xmlns:media="http://search.yahoo.com/mrss/"><metadata><channel><item><media:thumbnail url="https://images.example.org/unrelated.jpg"/></item></channel></metadata><channel>
+    <item><title>TEST FIXTURE Army article</title><link>/story</link><media:thumbnail url="https://images.example.org/article.jpg"/></item>
+  </channel></rss>`;
+  expect(parseFeed(xml, feed)[0].urlToImage).toBe('https://images.example.org/article.jpg');
+});
+
+it.each([
+  ['RSS', '<rss xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><channel><atom:entry><media:thumbnail url="https://images.example.org/wrong.jpg"/></atom:entry><item><title>TEST FIXTURE Army</title><link>https://www.defensenews.com/test-fixture/story</link><media:thumbnail url="https://images.example.org/right.jpg"/></item></channel></rss>'],
+  ['RSS1', '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/"><atom:entry><media:thumbnail url="https://images.example.org/wrong.jpg"/></atom:entry><item><title>TEST FIXTURE Army</title><link>https://www.defensenews.com/test-fixture/story</link><media:thumbnail url="https://images.example.org/right.jpg"/></item></rdf:RDF>'],
+  ['Atom', '<feed xmlns="http://www.w3.org/2005/Atom" xmlns:rss="http://purl.org/rss/1.0/" xmlns:media="http://search.yahoo.com/mrss/"><rss:item><media:thumbnail url="https://images.example.org/wrong.jpg"/></rss:item><entry><title>TEST FIXTURE Army</title><link href="https://www.defensenews.com/test-fixture/story"/><media:thumbnail url="https://images.example.org/right.jpg"/></entry></feed>'],
+  ['RSS multiple channels', '<rss xmlns:media="http://search.yahoo.com/mrss/"><channel><item><title>TEST FIXTURE Army</title><link>https://www.defensenews.com/test-fixture/story</link></item></channel><channel><item><media:thumbnail url="https://images.example.org/wrong.jpg"/></item></channel></rss>'],
+])('TEST FIXTURE %s binds images to the exact format-selected article node', (_format, xml) => {
+  const expectedImage = _format === 'RSS multiple channels' ? null : 'https://images.example.org/right.jpg';
+  expect(parseFeed(xml, feed)).toMatchObject([{
+    title: 'TEST FIXTURE Army', url: 'https://www.defensenews.com/test-fixture/story', urlToImage: expectedImage,
+  }]);
+});
+
+it('TEST FIXTURE keeps image identity aligned when source markup contains nested items', () => {
+  const xml = `<rss xmlns:media="http://search.yahoo.com/mrss/"><channel>
+    <item><title>TEST FIXTURE first Army</title><link>/first</link><description>TEST FIXTURE text <item><media:thumbnail url="https://images.example.org/wrong.jpg"/></item></description><media:thumbnail url="https://images.example.org/first.jpg"/></item>
+    <item><title>TEST FIXTURE second Army</title><link>/second</link><media:thumbnail url="https://images.example.org/second.jpg"/></item>
+  </channel></rss>`;
+  expect(parseFeed(xml, feed).map(article => article.urlToImage)).toEqual(['https://images.example.org/first.jpg', 'https://images.example.org/second.jpg']);
+});
+
+it.each([
+  ['RSS local default', '<rss><channel><item>', '<enclosure xmlns="https://not-rss.example.org/" type="image/jpeg" url="https://images.example.org/not-rss.jpg"/>', '</item></channel></rss>'],
+  ['RSS inherited default', '<rss><channel><item xmlns="https://not-rss.example.org/">', '<enclosure type="image/jpeg" url="https://images.example.org/not-rss.jpg"/>', '</item></channel></rss>'],
+  ['RSS1 foreign override', '<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/"><item>', '<enclosure xmlns="https://not-rss.example.org/" type="image/jpeg" url="https://images.example.org/not-rss.jpg"/>', '</item></rdf:RDF>'],
+  ['Atom default', '<feed xmlns="http://www.w3.org/2005/Atom"><entry>', '<enclosure type="image/jpeg" url="https://images.example.org/not-rss.jpg"/>', '</entry></feed>'],
+  ['RSS foreign prefix', '<rss xmlns:other="https://not-rss.example.org/"><channel><item>', '<other:enclosure type="image/jpeg" url="https://images.example.org/not-rss.jpg"/>', '</item></channel></rss>'],
+])('TEST FIXTURE %s refuses enclosures outside RSS namespaces', (_case, open, image, close) => {
+  const xml = `${open}<title>TEST FIXTURE Army</title><link href="https://www.defensenews.com/test-fixture/story">https://www.defensenews.com/test-fixture/story</link>${image}${close}`;
+  expect(parseFeed(xml, feed)).toMatchObject([{
+    title: 'TEST FIXTURE Army', url: 'https://www.defensenews.com/test-fixture/story', urlToImage: null,
+  }]);
+});
+
+it.each([
+  ['RSS1 default enclosure', '<enclosure type="image/jpeg" url="photo.jpg"/>'],
+  ['RSS1 prefixed enclosure', '<r:enclosure type="image/jpeg" url="photo.jpg"/>'],
+  ['RSS1 empty namespace enclosure', '<enclosure xmlns="" type="image/jpeg" url="photo.jpg"/>'],
+  ['RSS1 local media default', '<thumbnail xmlns="http://search.yahoo.com/mrss/" url="photo.jpg"/>'],
+])('TEST FIXTURE preserves %s with inherited XML bases', (_case, image) => {
+  const xml = `<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns="http://purl.org/rss/1.0/" xmlns:r="http://purl.org/rss/1.0/" xml:base="https://images.example.org/assets/">
+    <item xml:base="today/"><title>TEST FIXTURE Army</title><link>https://www.defensenews.com/test-fixture/story</link>${image}</item>
+  </rdf:RDF>`;
+  expect(parseFeed(xml, feed)[0].urlToImage).toBe('https://images.example.org/assets/today/photo.jpg');
+});
+
+it.each([
+  '<media:content url="https://images.example.org/not-an-image"/>',
+  '<content url="https://images.example.org/not-an-image" type="image/jpeg"/>',
+  '<media:content type="audio/mpeg" url="https://images.example.org/audio.mp3"/>',
+  '<enclosure type="audio/mpeg" url="https://images.example.org/audio.mp3"/>',
+  '<media:thumbnail type="audio/mpeg" url="https://images.example.org/audio.mp3"/>',
+  '<media:image medium="audio" url="https://images.example.org/audio.mp3"/>',
+  '<media:thumbnail xmlns:media="https://not-media.example.org/" url="https://images.example.org/pretend.jpg"/>',
+])('TEST FIXTURE refuses namespace-ambiguous or explicitly non-image media %s', image => {
+  const xml = `<rss xmlns:media="http://search.yahoo.com/mrss/"><channel><item><title>TEST FIXTURE Army media</title>
+    <link>/story</link><description>TEST FIXTURE snippet.</description>${image}</item></channel></rss>`;
+  expect(parseFeed(xml, feed)[0].urlToImage).toBeNull();
+});
+
+it.each([
+  'http://images.example.org/photo.jpg', 'data:image/png;base64,AAAA', 'https://localhost/photo.jpg',
+  'https://images.local/photo.jpg', 'https://127.0.0.1/photo.jpg', 'https://193.32.204.199/photo.jpg',
+  'https://[::1]/photo.jpg', 'https://user:secret@images.example.org/photo.jpg', 'https://images.example.org:8443/photo.jpg',
+])('TEST FIXTURE rejects unsafe publisher image %s without dropping readable text', url => {
+  const xml = `<rss xmlns:media="http://search.yahoo.com/mrss/"><channel><item><title>TEST FIXTURE Army image</title>
+    <link>/story</link><description>TEST FIXTURE public snippet.</description><media:thumbnail url="${url}"/>
+  </item></channel></rss>`;
+  expect(parseFeed(xml, feed)[0]).toMatchObject({ description: 'TEST FIXTURE public snippet.', urlToImage: null });
+});
+
+it.each([
+  ['media thumbnail', '<media:thumbnail url="photo.jpg"/>'],
+  ['media image', '<media:image url="photo.jpg"/>'],
+  ['media medium image', '<media:content medium="image" url="photo.jpg"/>'],
+  ['image enclosure', '<enclosure type="image/webp" url="photo.jpg"/>'],
+  ['inherited alternate namespace', '<m:group xml:base="../pictures/"><m:content type="image/png" url="photo.jpg"/></m:group>'],
+])('TEST FIXTURE resolves %s images against inherited XML bases', (_case, image) => {
+  const xml = `<rss xmlns:media="http://search.yahoo.com/mrss/" xmlns:m="http://search.yahoo.com/mrss/" xml:base="https://images.example.org/assets/">
+    <channel xml:base="news/"><item xml:base="today/"><title>TEST FIXTURE Army image</title>
+      <link>https://example.org/story</link><description>TEST FIXTURE snippet.</description>${image}
+    </item></channel></rss>`;
+  const expected = image.includes('group') ? 'https://images.example.org/assets/news/pictures/photo.jpg' : 'https://images.example.org/assets/news/today/photo.jpg';
+  expect(parseFeed(xml, feed)[0].urlToImage).toBe(expected);
+});
+
+it('TEST FIXTURE preserves prefixed Atom fields, XHTML text, and inherited image bases', () => {
+  const xml = `<a:feed xmlns:a="http://www.w3.org/2005/Atom" xmlns:m="http://search.yahoo.com/mrss/" xmlns:h="http://www.w3.org/1999/xhtml" xml:base="https://www.defensenews.com/test-fixture/">
+    <a:entry xml:base="articles/"><a:title>TEST FIXTURE Army <h:strong>denies</h:strong> retreat.</a:title>
+      <a:link xml:base="../" href="story"/><a:summary type="xhtml"><h:div>Army <h:strong>denies</h:strong> reports.<h:script>Not public</h:script></h:div></a:summary>
+      <m:group xml:base="https://images.example.org/assets/"><m:thumbnail xml:base="today/" url="photo.jpg"/></m:group>
+    </a:entry>
+  </a:feed>`;
+  const articles = parseFeed(xml, feed);
+  expect(articles).toMatchObject([{
+    title: 'TEST FIXTURE Army denies retreat.', description: 'Army denies reports.',
+    url: 'https://www.defensenews.com/test-fixture/story', urlToImage: 'https://images.example.org/assets/today/photo.jpg',
+  }]);
+  expect(selectArticles(articles.map(article => normalizeArticle(normalizeArticle(article))))).toEqual(articles);
+});
+
+it('TEST FIXTURE preserves whitespace-trimmed image attributes without trimming mixed text', () => {
+  const xml = `<rss xmlns:m=" http://search.yahoo.com/mrss/ " xml:base=" https://images.example.org/assets/ "><channel><item>
+    <title>TEST FIXTURE Army <strong>denies</strong> retreat reports.</title><link>https://www.defensenews.com/test-fixture/story</link>
+    <m:group xml:base=" pictures/ "><m:content type=" image/jpeg " medium=" image " url=" photo.jpg "/></m:group>
+  </item></channel></rss>`;
+  expect(parseFeed(xml, feed)[0]).toMatchObject({
+    title: 'TEST FIXTURE Army denies retreat reports.', urlToImage: 'https://images.example.org/assets/pictures/photo.jpg',
+  });
+});
+
+it('TEST FIXTURE extracts an explicitly identified RSS media image without exporting its markup', () => {
+  const xml = `<rss xmlns:media="http://search.yahoo.com/mrss/"><channel><item>
+    <title>TEST FIXTURE Army image</title><link>/image-story</link><description>TEST FIXTURE public snippet.</description>
+    <media:content url="https://images.example.org/army.jpg" type="image/jpeg"/>
+  </item></channel></rss>`;
+  expect(parseFeed(xml, feed)[0]).toMatchObject({
+    title: 'TEST FIXTURE Army image', description: 'TEST FIXTURE public snippet.', urlToImage: 'https://images.example.org/army.jpg',
+  });
 });

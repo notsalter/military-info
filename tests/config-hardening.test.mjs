@@ -30,3 +30,12 @@ test('production CSP permits only supported news transport origins', () => {
   const connect = policy.split(';').map(value => value.trim()).find(value => value.startsWith('connect-src ')).split(/\s+/).slice(1);
   assert.deepEqual(connect, ["'self'", 'https://api.rss2json.com', 'https://newsapi.org', 'https://api.thenewsapi.com']);
 });
+
+test('article share routes reach a bounded server function before the SPA', () => {
+  const config = JSON.parse(readFileSync(resolve(root, 'vercel.json'), 'utf8'));
+  assert.equal(config.functions['api/article.js']?.maxDuration, 10);
+  const route = config.rewrites?.find(rule => rule.source.startsWith('/article/'));
+  assert.ok(route, 'a first-party article route must reach server-rendered metadata');
+  assert.equal(route.source, '/article/:feed([a-z0-9-]{1,100})/:article([A-Za-z0-9_-]{1,2800})');
+  assert.equal(route.destination, '/api/article?feed=:feed&article=:article');
+});
