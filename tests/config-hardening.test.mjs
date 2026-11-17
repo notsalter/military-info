@@ -34,8 +34,15 @@ test('production CSP permits only supported news transport origins', () => {
 test('article share routes reach a bounded server function before the SPA', () => {
   const config = JSON.parse(readFileSync(resolve(root, 'vercel.json'), 'utf8'));
   assert.equal(config.functions['api/article.js']?.maxDuration, 10);
-  const route = config.rewrites?.find(rule => rule.source.startsWith('/article/'));
+  const route = config.rewrites?.find(rule => rule.source.includes('[A-Za-z0-9_-]'));
   assert.ok(route, 'a first-party article route must reach server-rendered metadata');
   assert.equal(route.source, '/article/:feed([a-z0-9-]{1,100})/:article([A-Za-z0-9_-]{1,2800})');
   assert.equal(route.destination, '/api/article?feed=:feed&article=:article');
+  const readable = config.rewrites?.find(rule => rule.source.includes('~'));
+  assert.ok(readable, 'readable tokens must reach the metadata function');
+  assert.equal(readable.source, '/article/:feed([a-z0-9-]{1,100})/:article([a-z0-9][a-z0-9-]{0,59}~[a-f0-9]{16})');
+  assert.equal(readable.destination, '/api/article?feed=:feed&article=:article');
+  const regex = new RegExp(`^/article/[a-z0-9-]{1,100}/([a-z0-9][a-z0-9-]{0,59}~[a-f0-9]{16})$`);
+  assert.ok(regex.test('/article/indomiliter/eks-pesawat-vvip-turki~0123456789abcdef'));
+  for (const bad of ['word~0123456789ABCDEF', `${'x'.repeat(61)}~0123456789abcdef`, 'word%7E0123456789abcdef', 'word~0123456789abcdef/']) assert.ok(!regex.test(`/article/indomiliter/${bad}`));
 });

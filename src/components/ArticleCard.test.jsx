@@ -1,12 +1,12 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, it, vi } from 'vitest';
-import { Buffer } from 'node:buffer';
+
 import ArticleCard from './ArticleCard';
 import { FEEDS } from '../services/feeds';
 
 const article = { id: 'https://example.test/share-fixture', url: 'https://example.test/share-fixture', title: 'Test fixture: registered navy headline', description: 'Synthetic component fixture.', source: { id: FEEDS[0].id, name: FEEDS[0].name, url: FEEDS[0].url }, publishedAt: null };
-const path = `/article/${FEEDS[0].id}/${Buffer.from(article.url).toString('base64url')}`;
+const path = `/article/${FEEDS[0].id}/test-fixture-registered-navy-headline~040b6a227cf584ac`;
 
 it.each([{ ...article, source: { id: 'test-unregistered', name: 'Test fixture publisher' } }, { ...article, url: 'javascript:alert(1)' }])('keeps unsupported articles as drawer buttons rather than first-party links %j', async (fixture) => {
   const onSelect = vi.fn();

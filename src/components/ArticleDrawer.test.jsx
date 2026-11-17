@@ -1,12 +1,12 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { Buffer } from 'node:buffer';
+
 import ArticleDrawer from './ArticleDrawer';
 import { FEEDS } from '../services/feeds';
 
 const article = { id: 'https://example.test/share-fixture', url: 'https://example.test/share-fixture', title: 'Test fixture: registered navy headline', description: 'Synthetic drawer fixture.', source: { id: FEEDS[0].id, name: FEEDS[0].name, url: FEEDS[0].url }, publishedAt: null };
-const shareURL = `${window.location.origin}/article/${FEEDS[0].id}/${Buffer.from(article.url).toString('base64url')}`;
+const shareURL = `${window.location.origin}/article/${FEEDS[0].id}/test-fixture-registered-navy-headline~040b6a227cf584ac`;
 const drawer = (value = article) => <ArticleDrawer article={value} onClose={vi.fn()} onToggleBookmark={vi.fn()} isBookmarked={false} />;
 
 it('does not offer copying or sharing for an unregistered source', () => {

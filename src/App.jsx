@@ -8,7 +8,7 @@ import SettingsModal from './components/SettingsModal';
 import SourcesModal from './components/SourcesModal';
 import { categoryLabels } from './components/ArticleMetadata';
 import { selectArticles } from './services/articleUtils';
-import { decodeArticlePath, getArticlePath } from './services/articleLinks';
+import { articleMatchesPath, decodeArticlePath, findArticleForPath, getArticlePath, mergeLiveAndSavedArticles } from './services/articleLinks';
 import { fetchNews } from './services/newsApi';
 import { readBookmarks, removeBookmark, saveBookmarks } from './services/storage';
 import { CURATION_DISCLAIMER } from './services/curationDisclaimer';
@@ -18,7 +18,7 @@ export default function App() {
   const [articles, setArticles] = useState([]);
   const [bookmarks, setBookmarks] = useState(() => readBookmarks());
   const [articleRoute, setArticleRoute] = useState(() => decodeArticlePath(window.location.pathname)?.path || null);
-  const [selectedArticle, setSelectedArticle] = useState(() => (articleRoute && bookmarks.find((article) => getArticlePath(article) === articleRoute)) || null);
+  const [selectedArticle, setSelectedArticle] = useState(() => (articleRoute && findArticleForPath(articleRoute, bookmarks)) || null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [bookmarkNotice, setBookmarkNotice] = useState(null);
@@ -56,7 +56,7 @@ export default function App() {
       articleRouteRef.current = path;
       setArticleRoute(path);
       setSelectedArticle((path && (knownArticlesRef.current.get(path)
-        || [...articles, ...bookmarks].find((article) => getArticlePath(article) === path))) || null);
+        || findArticleForPath(path, mergeLiveAndSavedArticles(articles, bookmarks)))) || null);
     };
     window.addEventListener('popstate', restoreArticle);
     return () => window.removeEventListener('popstate', restoreArticle);
@@ -78,11 +78,10 @@ export default function App() {
     setBookmarkNotice(null);
     setSelectedArticle(article);
   };
-  const activeArticle = selectedArticle || (articleRoute && [...articles, ...bookmarks].find((article) => getArticlePath(article) === articleRoute)) || null;
+  const activeArticle = selectedArticle || (articleRoute && findArticleForPath(articleRoute, mergeLiveAndSavedArticles(articles, bookmarks))) || null;
   useEffect(() => {
-    const path = getArticlePath(activeArticle);
-    if (path) knownArticlesRef.current.set(path, activeArticle);
-  }, [activeArticle]);
+    if (articleRoute && articleMatchesPath(activeArticle, articleRoute)) knownArticlesRef.current.set(articleRoute, activeArticle);
+  }, [activeArticle, articleRoute]);
   useEffect(() => {
     if (activeArticle || articleRoute || !pendingListingRef.current) return;
     const listing = pendingListingRef.current;
@@ -99,7 +98,7 @@ export default function App() {
     return () => window.cancelAnimationFrame(frame);
   }, [activeArticle, articleRoute]);
   const closeArticle = () => {
-    if (getArticlePath(activeArticle) === window.location.pathname) {
+    if (articleMatchesPath(activeArticle, window.location.pathname)) {
       if (window.history.state?.militaryInfoArticle?.path === window.location.pathname) {
         window.history.back();
         return;
@@ -132,7 +131,7 @@ export default function App() {
       setRequestHealth(result.feedHealth || []);
       if (result.success) {
         const path = articleRouteRef.current;
-        const matchedArticle = path && (result.articles || []).find((article) => getArticlePath(article) === path);
+        const matchedArticle = path && findArticleForPath(path, result.articles || []);
         if (matchedArticle) setSelectedArticle((current) => current || matchedArticle);
         setArticles(result.articles || []);
         setArticleResult({ generation, stale: result.stale });
@@ -198,7 +197,7 @@ export default function App() {
         <button onClick={() => {
           const recovered = readBookmarks();
           const path = articleRouteRef.current;
-          const matchedArticle = path && recovered.find((article) => getArticlePath(article) === path);
+          const matchedArticle = path && findArticleForPath(path, recovered);
           if (matchedArticle) setSelectedArticle((current) => current || matchedArticle);
           setBookmarks(recovered);
         }}>Retry saved articles</button></div>}

@@ -1,4 +1,4 @@
-import { decodeArticlePath, safePublisherImage } from '../src/services/articleLinks.js';
+import { decodeArticlePath, findArticleForPath, getArticlePath, safePublisherImage } from '../src/services/articleLinks.js';
 import { safeDate } from '../src/services/articleUtils.js';
 import { CURATION_DISCLAIMER } from '../src/services/curationDisclaimer.js';
 
@@ -39,8 +39,14 @@ function errorPage(res, status, message, head = false) {
 
 function requestTarget(url) {
   if (typeof url !== 'string' || /[\r\n]/.test(url)) return null;
-  const rewritten = /^\/api\/article\?feed=([a-z0-9-]{1,100})&article=([A-Za-z0-9_-]{1,2800})$/.exec(url);
-  return decodeArticlePath(rewritten ? `/article/${rewritten[1]}/${rewritten[2]}` : url);
+  const [pathname, query, extra] = url.split('?');
+  if (query === undefined) return decodeArticlePath(pathname);
+  if (extra !== undefined) return null;
+  const fields = /^feed=([a-z0-9-]{1,100})&article=([A-Za-z0-9_~-]{1,2800})$/.exec(query);
+  if (!fields) return null;
+  const path = `/article/${fields[1]}/${fields[2]}`;
+  if (pathname !== '/api/article' && pathname !== path) return null;
+  return decodeArticlePath(path);
 }
 
 export function createArticlePreviewHandler({ feedHandler, now = Date.now } = {}) {
@@ -74,13 +80,13 @@ export function createArticlePreviewHandler({ feedHandler, now = Date.now } = {}
       res.setHeader('Retry-After', '60');
       return errorPage(res, 503, 'The source feed is temporarily unavailable. Please try again shortly.', req.method === 'HEAD');
     }
-    const article = captured.body.articles.find(article => article.url === target.url);
+    const article = findArticleForPath(target.path, captured.body.articles.map(article => ({ ...article, source: target.feed })));
     if (!article) return errorPage(res, 404, 'This headline is no longer in the source feed. Headlines become unavailable when rotated out; this is not a permanent archive.', req.method === 'HEAD');
     const upstreamCache = /^public, max-age=0, s-maxage=(\d{1,3})$/.exec(captured.headers['cache-control'] ?? '');
     const seconds = Math.max(0, Math.min(900, upstreamCache ? Number(upstreamCache[1]) : 0, Math.floor((timestamp + 900_000 - currentTime) / 1000)));
     res.setHeader('Cache-Control', `public, max-age=0, s-maxage=${seconds}`);
     res.setHeader('Last-Modified', new Date(captured.body.fetchedAt).toUTCString());
     if (req.method === 'HEAD') return res.status(200).end();
-    return res.status(200).send(renderArticle(article, target, captured.body.fetchedAt));
+    return res.status(200).send(renderArticle(article, { ...target, path: getArticlePath(article) || target.path }, captured.body.fetchedAt));
   };
 }

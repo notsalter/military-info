@@ -8,7 +8,9 @@ import { createFeedHandler } from './feedHandler.js';
 
 const feed = FEEDS[0];
 const articleURL = 'https://www.defensenews.com/test-fixture/story?a=1&b=2';
-const path = getArticlePath({ url: articleURL, source: feed });
+const fixtureArticle = { title: 'TEST FIXTURE Army update', url: articleURL, source: feed };
+const path = `/article/${feed.id}/${btoa(articleURL).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')}`;
+const readablePath = getArticlePath(fixtureArticle);
 const clock = Date.parse('2026-11-17T09:00:00Z');
 const xml = `<rss><channel><item><title>TEST FIXTURE Army update</title><link>${articleURL.replace('&', '&amp;')}</link>
   <description>TEST FIXTURE public snippet.</description><pubDate>2026-11-17T08:00:00Z</pubDate>
@@ -257,12 +259,67 @@ it.each([
   expect(fetchFeed).not.toHaveBeenCalled();
 });
 
-it('TEST FIXTURE accepts the exact Vercel rewritten route with the same canonical URL', async () => {
+it.each([path, readablePath])('TEST FIXTURE accepts exact original-path query echoes for %s with GET/HEAD parity', async route => {
+  const { handler, feedHandler } = await setup();
+  const token = route.split('/').at(-1);
+  const direct = response();
+  const get = response();
+  const head = response();
+  await handler({ method: 'GET', url: `/api/article?feed=${feed.id}&article=${token}` }, direct);
+  const runtime = `${route}?feed=${feed.id}&article=${token}`;
+  await handler({ method: 'GET', url: runtime }, get);
+  await handler({ method: 'HEAD', url: runtime }, head);
+  expect(get.statusCode).toBe(200);
+  expect(direct.statusCode).toBe(200);
+  expect(get.body).toBe(direct.body);
+  expect(head.statusCode).toBe(200);
+  expect(head.headers).toEqual(get.headers);
+  expect(head.body).toBeUndefined();
+  expect(feedHandler.mock.calls.every(([req]) => req.url === `/api/feeds?id=${feed.id}`)).toBe(true);
+});
+
+it.each([path, readablePath])('TEST FIXTURE rejects nonexact echoes for %s before feed access', async route => {
+  const { handler, feedHandler } = await setup();
+  const token = route.split('/').at(-1);
+  const echo = `${route}?feed=${feed.id}&article=${token}`;
+  for (const url of [echo + '&extra=1', echo + `&feed=${feed.id}`, echo + `&article=${token}`, echo + '#fragment', echo + '\n',
+    `${route}?article=${token}&feed=${feed.id}`, `${route}?feed=naval-news&article=${token}`, `${route}?feed=${feed.id}&article=AAAA`,
+    echo.replace('feed=', '%66eed='), echo.replace('defense-news&', 'defense%2dnews&'), echo.replace('article=', 'article=%61'),
+    echo.replace('/article/', '/%61rticle/'), echo + '&', echo.replace('?', '?extra=1&')]) {
+    const res = response();
+    await handler({ method: 'GET', url }, res);
+    expect(res.statusCode, url).toBe(400);
+  }
+  expect(feedHandler).not.toHaveBeenCalled();
+});
+
+it('TEST FIXTURE treats slugs as decoration and emits only the current real feed canonical/headline', async () => {
+  const { handler } = await setup();
+  const route = readablePath.replace('test-fixture-army-update', 'invented-not-news');
+  const res = response();
+  await handler({ method: 'GET', url: route }, res);
+  expect(res.statusCode).toBe(200);
+  const doc = document(res.body);
+  expect(doc.querySelector('h1').textContent).toBe(fixtureArticle.title);
+  expect(doc.querySelector('link[rel="canonical"]').href).toBe(`https://military-info.vercel.app${readablePath}`);
+  expect(res.body).not.toContain('invented-not-news');
+});
+
+it.each([path, readablePath])('TEST FIXTURE refuses ambiguous feed records for %s', async route => {
+  const { createArticlePreviewHandler } = await import('./articlePreview.js');
+  const feedHandler = async (_req, res) => res.status(200).json({ source: feed, fetchedAt: new Date(clock).toISOString(), articles: [fixtureArticle, { ...fixtureArticle, title: 'TEST FIXTURE conflicting' }] });
+  const res = response();
+  await createArticlePreviewHandler({ feedHandler, now: () => clock })({ method: 'GET', url: route }, res);
+  expect(res.statusCode).toBe(404);
+  expect(res.headers['Cache-Control']).toBe('no-store');
+});
+
+it('TEST FIXTURE accepts the exact direct API control with the current readable canonical URL', async () => {
   const { handler } = await setup();
   const res = response();
   await handler({ method: 'GET', url: `/api/article?feed=${feed.id}&article=${path.split('/').at(-1)}` }, res);
   expect(res.statusCode).toBe(200);
-  expect(document(res.body).querySelector('link[rel="canonical"]').href).toBe(`https://military-info.vercel.app${path}`);
+  expect(document(res.body).querySelector('link[rel="canonical"]').href).toBe(`https://military-info.vercel.app${readablePath}`);
 });
 
 it('TEST FIXTURE supplies bounded social metadata and accessible no-script publisher attribution', async () => {
@@ -279,7 +336,7 @@ it('TEST FIXTURE supplies bounded social metadata and accessible no-script publi
   expect(meta('description')).toHaveLength(250);
   expect(meta('og:title')).toBe(title);
   expect(meta('og:description')).toBe(meta('description'));
-  expect(meta('og:url')).toBe(`https://military-info.vercel.app${path}`);
+  expect(meta('og:url')).toBe(`https://military-info.vercel.app${getArticlePath({ ...fixtureArticle, title })}`);
   expect(meta('og:site_name')).toBe('Military Info');
   expect(meta('og:type')).toBe('article');
   expect(meta('twitter:card')).toBe('summary');
@@ -299,7 +356,7 @@ it('TEST FIXTURE supplies bounded social metadata and accessible no-script publi
   expect(doc.querySelector('.preview-note').textContent).toMatch(/rotated out of (?:the )?source feed/i);
   expect(doc.querySelector('.preview-note').textContent).toMatch(/not a permanent archive/i);
   const share = doc.querySelector('input[readonly]');
-  expect(share.value).toBe(`https://military-info.vercel.app${path}`);
+  expect(share.value).toBe(`https://military-info.vercel.app${getArticlePath({ ...fixtureArticle, title })}`);
   expect(doc.querySelector(`label[for="${share.id}"]`).textContent).toMatch(/copy|share/i);
   expect(doc.querySelector('a[target="_blank"]').rel).toBe('noopener noreferrer');
   expect(doc.querySelector('img,script,[onclick],[onerror]')).toBeNull();
@@ -320,6 +377,6 @@ it('TEST FIXTURE renders a first-party article found in the exact fixed registry
   expect(globalThis.fetch).not.toHaveBeenCalled();
   const doc = document(res.body);
   expect(doc.querySelector('h1').textContent).toBe('TEST FIXTURE Army update');
-  expect(doc.querySelector('link[rel="canonical"]').href).toBe(`https://military-info.vercel.app${path}`);
+  expect(doc.querySelector('link[rel="canonical"]').href).toBe(`https://military-info.vercel.app${readablePath}`);
   expect(doc.querySelector('a[target="_blank"]').href).toBe(articleURL);
 });
