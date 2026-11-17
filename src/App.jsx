@@ -1,423 +1,147 @@
-import { useState, useEffect } from 'react';
-import SearchBar from './components/SearchBar';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import ArticleGrid from './components/ArticleGrid';
-import Loading from './components/Loading';
+import SearchBar from './components/SearchBar';
 import ErrorMessage from './components/ErrorMessage';
-import SettingsModal from './components/SettingsModal';
+import Loading from './components/Loading';
 import ArticleDrawer from './components/ArticleDrawer';
-import { fetchNews, getCustomKeys } from './services/newsApi';
+import SettingsModal from './components/SettingsModal';
+import SourcesModal from './components/SourcesModal';
+import { categoryLabels } from './components/ArticleMetadata';
+import { selectArticles } from './services/articleUtils';
+import { fetchNews } from './services/newsApi';
+import { readBookmarks, removeBookmark, saveBookmarks } from './services/storage';
 import './index.css';
 
-/**
- * Main App Component - Tactical Military Info Dashboard
- */
-function App() {
+export default function App() {
   const [articles, setArticles] = useState([]);
+  const [bookmarks, setBookmarks] = useState(() => readBookmarks());
+  const [selectedArticle, setSelectedArticle] = useState(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
+  const [bookmarkNotice, setBookmarkNotice] = useState(null);
+  const [savedView, setSavedView] = useState(false);
+  const [query, setQuery] = useState('');
+  const [searchDraft, setSearchDraft] = useState('');
+  const [category, setCategory] = useState('all');
+  const [source, setSource] = useState('all');
+  const [sort, setSort] = useState('newest');
+  const [visibleCount, setVisibleCount] = useState(12);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [currentQuery, setCurrentQuery] = useState('defense');
-  const [dataSource, setDataSource] = useState(null);
-  
-  // Custom states for refactoring
-  const [selectedArticle, setSelectedArticle] = useState(null);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [activeCategory, setActiveCategory] = useState('all');
-  const [showBookmarksOnly, setShowBookmarksOnly] = useState(false);
-  const [bookmarksCount, setBookmarksCount] = useState(0);
-  const [isOfflineMode, setIsOfflineMode] = useState(false);
-  const [keyProfile, setKeyProfile] = useState('Keyless RSS Mode');
-  const [visibleCount, setVisibleCount] = useState(12);
-
-  // Count bookmarks on mount/update
-  const updateBookmarksCount = () => {
-    const bms = JSON.parse(localStorage.getItem('military_bookmarks') || '[]');
-    setBookmarksCount(bms.length);
-  };
-
-  /**
-   * Fetch news articles from API
-   */
-  const loadNews = async (query) => {
-    setLoading(true);
-    setError(null);
-    setSelectedArticle(null);
-    setVisibleCount(12); // Reset visible pagination on fresh load
-    
-    try {
-      console.log('📰 Sourcing news from data layer. Query:', query);
-      const result = await fetchNews(query, 60); // Sourced pool expanded to 60 for pagination
-      
+  const [feedResult, setFeedResult] = useState(null);
+  const [articleResult, setArticleResult] = useState(null);
+  const [requestHealth, setRequestHealth] = useState([]);
+  const [requestStatus, setRequestStatus] = useState('pending');
+  const [requestGeneration, setRequestGeneration] = useState(0);
+  const networkQueryRef = useRef('');
+  const requestRef = useRef({ generation: 0, controller: null });
+  const readingAreaRef = useRef(null);
+  const paginationFocusRef = useRef(null);
+  useLayoutEffect(() => {
+    if (paginationFocusRef.current === null) return;
+    readingAreaRef.current?.querySelectorAll('.headline-button')[paginationFocusRef.current]?.focus();
+    paginationFocusRef.current = null;
+  }, [visibleCount]);
+  const loadNews = useCallback(async (nextQuery, force = false, initial = false) => {
+    networkQueryRef.current = nextQuery;
+    requestRef.current.controller?.abort();
+    const generation = ++requestRef.current.generation;
+    const controller = new AbortController();
+    requestRef.current.controller = controller;
+    setFeedResult(null);
+    setRequestHealth([]);
+    setRequestStatus('pending');
+    setRequestGeneration(generation);
+    if (!initial) { setLoading(true); setError(null); }
+    const accept = (result) => {
+      if (generation !== requestRef.current.generation || controller.signal.aborted) return;
+      setFeedResult(result);
+      setRequestHealth(result.feedHealth || []);
       if (result.success) {
-        setArticles(result.articles);
-        setCurrentQuery(query);
-        setDataSource(result.source);
-        setIsOfflineMode(!!result.offline);
-      } else {
-        setError(result.error);
-        setArticles([]);
-        setDataSource(null);
+        setArticles(result.articles || []);
+        setArticleResult({ generation, stale: result.stale });
       }
-    } catch (err) {
-      console.error('Aggregator execution crashed:', err);
-      setError('A critical error occurred while querying the news gateways. Please retry.');
-      setArticles([]);
-      setDataSource(null);
+    };
+    try {
+      const response = await fetchNews(nextQuery, 200, { signal: controller.signal, onProgress: accept, force });
+      if (generation !== requestRef.current.generation || controller.signal.aborted) return;
+      accept(response);
+      setRequestStatus(response.success ? 'complete' : 'failed');
+      if (!response.success) setError('News could not be loaded. Try again or read your saved articles.');
+    } catch {
+      if (generation !== requestRef.current.generation || controller.signal.aborted) return;
+      setRequestStatus('failed');
+      setError('News could not be loaded. Try again or read your saved articles.');
     } finally {
-      setLoading(false);
+      if (generation === requestRef.current.generation && !controller.signal.aborted) setLoading(false);
     }
-  };
-
-  // Inspect API keys to update badge profile status
-  const updateKeyProfileBadge = () => {
-    const { newsApiKey, theNewsApiKey } = getCustomKeys();
-    const envNewsKey = import.meta.env.VITE_NEWS_API_KEY;
-    const envTheNewsKey = import.meta.env.VITE_THENEWSAPI_KEY;
-
-    const hasNewsKey = (newsApiKey && !newsApiKey.startsWith('your_')) || (envNewsKey && !envNewsKey.startsWith('your_'));
-    const hasTheNewsKey = (theNewsApiKey && !theNewsApiKey.startsWith('your_')) || (envTheNewsKey && !envTheNewsKey.startsWith('your_'));
-
-    if (hasNewsKey && hasTheNewsKey) {
-      setKeyProfile('NewsAPI + TheNewsAPI');
-    } else if (hasNewsKey) {
-      setKeyProfile('NewsAPI Active');
-    } else if (hasTheNewsKey) {
-      setKeyProfile('TheNewsAPI Active');
-    } else {
-      setKeyProfile('Keyless Public Mode');
-    }
-  };
-
-  // Load initial content
-  useEffect(() => {
-    loadNews('defense');
-    updateBookmarksCount();
-    updateKeyProfileBadge();
   }, []);
-
-  // Reset display count on filter changes
   useEffect(() => {
-    setVisibleCount(12);
-  }, [activeCategory, showBookmarksOnly]);
-
-  const handleSearch = (searchTerm) => {
-    // Turn off bookmarks-only mode to show search results
-    setShowBookmarksOnly(false);
-    loadNews(searchTerm);
-  };
-
-  const handleRetry = () => {
-    loadNews(currentQuery);
-  };
-
-  const handleConfigSaved = () => {
-    updateKeyProfileBadge();
-    loadNews(currentQuery);
-  };
-
-  // Dynamic client-side categorization filter
-  const filterByCategory = (articlesList) => {
-    if (activeCategory === 'all') return articlesList;
-    
-    return articlesList.filter(article => {
-      const text = `${article.title} ${article.description || ''}`.toLowerCase();
-      
-      if (activeCategory === 'naval') {
-        return text.includes('submarine') || text.includes('navy') || text.includes('warship') || text.includes('naval') || text.includes('carrier') || text.includes('fleet');
-      }
-      if (activeCategory === 'aerospace') {
-        return text.includes('fighter jet') || text.includes('aviation') || text.includes('air force') || text.includes('uav') || text.includes('drone') || text.includes('helicopter') || text.includes('stealth');
-      }
-      if (activeCategory === 'ground') {
-        return text.includes('tank') || text.includes('soldier') || text.includes('army') || text.includes('marines') || text.includes('troops') || text.includes('artillery') || text.includes('infantry');
-      }
-      if (activeCategory === 'cyber') {
-        return text.includes('cyber') || text.includes('satellite') || text.includes('hack') || text.includes('darpa') || text.includes('network') || text.includes('phishing');
-      }
-      if (activeCategory === 'geopolitics') {
-        return !text.includes('submarine') && !text.includes('navy') && !text.includes('warship') && !text.includes('naval') && !text.includes('carrier') && !text.includes('fleet') &&
-               !text.includes('fighter jet') && !text.includes('aviation') && !text.includes('air force') && !text.includes('uav') && !text.includes('drone') && !text.includes('helicopter') && !text.includes('stealth') &&
-               !text.includes('tank') && !text.includes('soldier') && !text.includes('army') && !text.includes('marines') && !text.includes('troops') && !text.includes('artillery') && !text.includes('infantry') &&
-               !text.includes('cyber') && !text.includes('satellite') && !text.includes('hack') && !text.includes('darpa') && !text.includes('network') && !text.includes('phishing');
-      }
-      return true;
-    });
-  };
-
-  // Determine displayed articles
-  const getDisplayedArticles = () => {
-    if (showBookmarksOnly) {
-      const bms = JSON.parse(localStorage.getItem('military_bookmarks') || '[]');
-      return filterByCategory(bms);
+    const request = requestRef.current;
+    // Initial state already represents loading; this only starts the external request.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    loadNews('', false, true);
+    return () => { request.generation++; request.controller?.abort(); };
+  }, [loadNews]);
+  const handleSearch = (nextQuery) => { setVisibleCount(12); setQuery(nextQuery); if (!savedView) loadNews(nextQuery); };
+  const toggleBookmark = (article) => {
+    if (bookmarks.storageError) {
+      setBookmarkNotice({ success: false, text: 'Saved articles must be recovered before making changes. Close this article and choose Retry saved articles to recover your collection.' });
+      return;
     }
-    return filterByCategory(articles);
+    const exists = bookmarks.some((bookmark) => bookmark.id === article.id);
+    const updated = exists ? bookmarks.filter((bookmark) => bookmark.id !== article.id) : [...bookmarks, article];
+    try {
+      const saved = exists ? removeBookmark(article.id) : saveBookmarks(updated);
+      if (!saved?.success) {
+        setBookmarkNotice({ success: false, text: `Could not save this change. ${saved?.error || 'Browser storage may be blocked or full.'}` });
+        return;
+      }
+      setBookmarks(exists ? saved.articles : selectArticles(updated));
+      setBookmarkNotice({ success: true, text: exists ? 'Article removed from saved articles.' : 'Article saved in this browser.' });
+    } catch {
+      setBookmarkNotice({ success: false, text: 'Could not save this change. Browser storage may be blocked or full.' });
+    }
   };
-
-  const displayedArticles = getDisplayedArticles();
-
-  return (
-    <div className="min-h-screen bg-[#070b12] text-gray-200 flex flex-col justify-between cyber-grid relative">
-      {/* Background ambient lighting */}
-      <div className="absolute top-0 left-1/4 w-[500px] h-[300px] bg-cyan-900/10 rounded-full blur-[120px] pointer-events-none"></div>
-      <div className="absolute bottom-0 right-1/4 w-[400px] h-[300px] bg-amber-900/5 rounded-full blur-[120px] pointer-events-none"></div>
-
-      <div>
-        {/* Header HUD */}
-        <header className="relative border-b border-white/5 bg-[#0d1423]/70 backdrop-blur-md shadow-xl z-20">
-          <div className="container mx-auto px-4 py-4 flex flex-col md:flex-row items-center justify-between gap-4">
-            
-            {/* Logo and Tactical HUD Title */}
-            <div className="flex items-center space-x-3 select-none">
-              <span className="text-3xl filter drop-shadow-[0_0_8px_rgba(6,182,212,0.3)] animate-pulse">🎖️</span>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-widest font-mono text-glow-cyan">
-                  MILITARY INFO
-                </h1>
-                <p className="text-[10px] text-cyan-400/70 font-mono tracking-wider uppercase">
-                  Tactical Command Center • Defense News Aggregator
-                </p>
-              </div>
-            </div>
-
-            {/* Dashboard status indicators */}
-            <div className="flex flex-wrap items-center justify-center gap-3">
-              {/* Credentials status */}
-              <div className="flex items-center space-x-1.5 px-3 py-1 rounded bg-[#090e1a] border border-white/5 text-[10px] font-mono">
-                <span className={`w-1.5 h-1.5 rounded-full ${keyProfile.includes('Keyless') ? 'bg-amber-500 animate-pulse' : 'bg-cyan-500 animate-pulse'}`}></span>
-                <span className="text-gray-400">CREDENTIALS:</span>
-                <span className={keyProfile.includes('Keyless') ? 'text-amber-400' : 'text-cyan-400'}>{keyProfile}</span>
-              </div>
-
-              {/* Network status */}
-              <div className="flex items-center space-x-1.5 px-3 py-1 rounded bg-[#090e1a] border border-white/5 text-[10px] font-mono">
-                <span className={`w-1.5 h-1.5 rounded-full ${isOfflineMode ? 'bg-rose-500 animate-ping' : 'bg-emerald-500 animate-pulse'}`}></span>
-                <span className="text-gray-400">STATUS:</span>
-                <span className={isOfflineMode ? 'text-rose-400' : 'text-emerald-400'}>{isOfflineMode ? 'OFFLINE ARCHIVE' : 'ONLINE GATEWAYS'}</span>
-              </div>
-
-              {/* Bookmarks Toggle Shortcut */}
-              <button
-                onClick={() => {
-                  setShowBookmarksOnly(!showBookmarksOnly);
-                  updateBookmarksCount();
-                }}
-                className={`px-3 py-1 rounded border text-[10px] font-mono font-bold transition-all flex items-center gap-1.5 ${
-                  showBookmarksOnly 
-                    ? 'bg-amber-600/20 text-amber-300 border-amber-500/30' 
-                    : 'bg-[#090e1a] text-gray-400 border-white/5 hover:text-white hover:border-white/10'
-                }`}
-              >
-                <span>★</span>
-                <span>BOOKMARKS ({bookmarksCount})</span>
-              </button>
-
-              {/* Settings Action Button */}
-              <button
-                onClick={() => setIsSettingsOpen(true)}
-                className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-white font-mono text-[10px] font-bold rounded border border-white/10 hover:border-cyan-500/30 transition-all"
-              >
-                ⚙️ SYSTEM CONFIG
-              </button>
-            </div>
-
-          </div>
-        </header>
-
-        {/* Geopolitical Alert Ticker */}
-        <section className="bg-slate-950/80 border-b border-white/5 py-1.5 overflow-hidden select-none z-10 relative">
-          <div className="animate-ticker flex items-center space-x-8 font-mono text-[10px] tracking-wider text-cyan-500/80">
-            <span>[ SYSTEM SECURITY LOGGED ]</span>
-            <span>// DECRPYTION GATEWAYS ONLINE //</span>
-            <span>[ INTEL BREADTH: 11 CURATED TACTICAL RSS CHANNELS ACTIVE ]</span>
-            <span>// DATA ENCRYPTION: SHA-256 LAYER ENABLED //</span>
-            
-            {articles.length > 0 ? (
-              articles.slice(0, 5).map((art, idx) => (
-                <span key={idx} className="text-white">
-                  ⚡ <strong className="text-cyan-400">[HOT INTEL]</strong> {art.title.toUpperCase()}
-                </span>
-              ))
-            ) : (
-              <span className="text-amber-400">⚠️ FEEDS OFFLINE • DEGRADED OPERATION MODE ACTIVE • CHECK CREDENTIALS</span>
-            )}
-            
-            <span>[ ATTRIBUTION PROTECTION ACTIVE: PREVIEWS HARD-LIMITED TO 250 CHARACTERS ]</span>
-          </div>
-        </section>
-
-        {/* Central Console */}
-        <main className="container mx-auto px-4 py-6">
-          
-          {/* Sub-header Controls */}
-          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-4 mb-6">
-            {/* Search inputs */}
-            <div className="flex-1">
-              <SearchBar onSearch={handleSearch} />
-            </div>
-
-            {/* Quick stats label */}
-            {!loading && !error && (
-              <div className="text-right flex flex-col justify-center">
-                <span className="text-xs font-mono text-gray-500">
-                  DATABASE GATEWAY MATCHES
-                </span>
-                <span className="text-sm font-mono text-cyan-400">
-                  {showBookmarksOnly ? 'Bookmarked Report Base' : `Source: ${dataSource || 'System Default'}`} • {displayedArticles.length} Loaded
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* Tactical Category Filter Tabs */}
-          <div className="flex flex-wrap items-center gap-2 mb-6 border-b border-white/5 pb-4">
-            <button
-              onClick={() => setActiveCategory('all')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold tracking-wider transition-all ${
-                activeCategory === 'all' 
-                  ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 text-glow-cyan' 
-                  : 'bg-slate-900/40 text-gray-400 border border-white/5 hover:text-white'
-              }`}
-            >
-              🌐 ALL CHANNELS
-            </button>
-            <button
-              onClick={() => setActiveCategory('naval')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold tracking-wider transition-all flex items-center gap-1.5 ${
-                activeCategory === 'naval' 
-                  ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 text-glow-cyan' 
-                  : 'bg-slate-900/40 text-gray-400 border border-white/5 hover:text-white'
-              }`}
-            >
-              ⚓ NAVAL OPERATIONS
-            </button>
-            <button
-              onClick={() => setActiveCategory('aerospace')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold tracking-wider transition-all flex items-center gap-1.5 ${
-                activeCategory === 'aerospace' 
-                  ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 text-glow-cyan' 
-                  : 'bg-slate-900/40 text-gray-400 border border-white/5 hover:text-white'
-              }`}
-            >
-              ✈️ AEROSPACE DEFENSE
-            </button>
-            <button
-              onClick={() => setActiveCategory('ground')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold tracking-wider transition-all flex items-center gap-1.5 ${
-                activeCategory === 'ground' 
-                  ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 text-glow-cyan' 
-                  : 'bg-slate-900/40 text-gray-400 border border-white/5 hover:text-white'
-              }`}
-            >
-              🎖️ GROUND SYSTEMS
-            </button>
-            <button
-              onClick={() => setActiveCategory('cyber')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold tracking-wider transition-all flex items-center gap-1.5 ${
-                activeCategory === 'cyber' 
-                  ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 text-glow-cyan' 
-                  : 'bg-slate-900/40 text-gray-400 border border-white/5 hover:text-white'
-              }`}
-            >
-              📡 CYBER & INTEL
-            </button>
-            <button
-              onClick={() => setActiveCategory('geopolitics')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-mono font-semibold tracking-wider transition-all flex items-center gap-1.5 ${
-                activeCategory === 'geopolitics' 
-                  ? 'bg-cyan-600/20 text-cyan-300 border border-cyan-500/30 text-glow-cyan' 
-                  : 'bg-slate-900/40 text-gray-400 border border-white/5 hover:text-white'
-              }`}
-            >
-              🌐 GEOPOLITICS
-            </button>
-          </div>
-
-          {/* Main Display Grid */}
-          
-          {/* Loading Indicator */}
-          {loading && <Loading />}
-
-          {/* Error Message alert */}
-          {!loading && error && (
-            <ErrorMessage message={error} onRetry={handleRetry} />
-          )}
-
-          {/* Grid Render */}
-          {!loading && !error && (
-            <ArticleGrid 
-              articles={displayedArticles.slice(0, visibleCount)} 
-              onSelectArticle={(art) => setSelectedArticle(art)} 
-            />
-          )}
-
-          {/* Load More Button */}
-          {!loading && !error && visibleCount < displayedArticles.length && (
-            <div className="flex justify-center mt-10 mb-6">
-              <button
-                onClick={() => setVisibleCount(prev => prev + 12)}
-                className="px-8 py-3 bg-slate-900/60 hover:bg-slate-800 text-cyan-400 font-mono text-xs font-bold rounded-lg border border-cyan-500/20 hover:border-cyan-500/40 hover:shadow-lg hover:shadow-cyan-500/5 transition-all uppercase tracking-widest text-glow-cyan"
-              >
-                [ LOAD MORE INTEL REPORTS ]
-              </button>
-            </div>
-          )}
-        </main>
-      </div>
-
-      {/* Sleek Legal & Attribution Footer */}
-      <footer className="border-t border-white/5 bg-slate-950/60 text-gray-500 mt-12 py-8 select-none">
-        <div className="container mx-auto px-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs leading-relaxed">
-            
-            {/* Info details */}
-            <div className="space-y-2">
-              <div className="flex items-center space-x-2 text-gray-300 font-mono font-bold tracking-wider">
-                <span>🎖️ MILITARY INFO AGGREGATOR</span>
-              </div>
-              <p className="text-[11px]">
-                This platform is a non-commercial news indexing portal for security analysts, geopolitics students, and defense industry researchers. All fetched headlines, publication dates, and textual snippets are retrieved from public RSS and official developer syndication channels.
-              </p>
-              <p className="text-[10px] text-cyan-500/50">
-                Active syndication nodes: Defense News, Military Times, Breaking Defense, The Aviationist, Naval News, Defense One, DARPA News, US Dept of Defense Feed.
-              </p>
-            </div>
-
-            {/* Legal DMCA protections */}
-            <div className="space-y-2 border-t md:border-t-0 md:border-l border-white/5 pt-4 md:pt-0 md:pl-6">
-              <span className="text-gray-300 font-mono font-bold tracking-wider uppercase block">
-                🛡️ FAIR USE & DMCA DISCLOSURE
-              </span>
-              <p className="text-[11px]">
-                In full compliance with copyright guidelines, we enforce a strict 250-character limit on all description text previews. No full articles are scraped, cached, or hosted. All outward links connect directly to the source web properties.
-              </p>
-              <p className="text-[10px] text-amber-500/60 font-sans">
-                Publisher Takedown Compliance: If you are the owner of an indexed feed and wish to exclude your headlines, contact us at <span className="underline cursor-pointer text-amber-400">dmca-compliance@militaryinfo.gov</span> to initiate prompt removal.
-              </p>
-            </div>
-
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-white/5 text-[10px] font-mono">
-            <span>© 2026 MILITARY INFO • STABILITY PROTOCOL ACTIVE</span>
-            <span>BUILT WITH REACT • DEPLOYED IN COMPLIANT MODE</span>
-          </div>
-        </div>
-      </footer>
-
-      {/* Sub-Components Modals & Drawer */}
-      <SettingsModal 
-        isOpen={isSettingsOpen} 
-        onClose={() => setIsSettingsOpen(false)} 
-        onConfigSaved={handleConfigSaved} 
-      />
-
-      <ArticleDrawer 
-        article={selectedArticle} 
-        isOpen={!!selectedArticle} 
-        onClose={() => setSelectedArticle(null)}
-        onBookmarkChanged={updateBookmarksCount}
-      />
-    </div>
-  );
+  const resetFilters = () => { setCategory('all'); setSource('all'); setSort('newest'); setSearchDraft(''); handleSearch(''); };
+  const collection = savedView ? bookmarks : articles;
+  const publishers = [...new Map(collection.map((article) => [article.source.id, article.source])).values()].sort((left, right) => left.name.localeCompare(right.name));
+  const displayedArticles = selectArticles(collection, { query, category, source, sort });
+  return <div className="app-shell">
+    <a className="skip-link" href="#news">Skip to news</a>
+    <header className="masthead"><div><h1>Military Info</h1><p>Defense news, at the source.</p></div>
+      <nav aria-label="Reading views"><button aria-pressed={!savedView} onClick={() => { setSavedView(false); setVisibleCount(12); if (networkQueryRef.current !== query) loadNews(query); }}>Latest news</button>
+        <button aria-pressed={savedView} onClick={() => { setSavedView(true); setVisibleCount(12); }}>Saved articles ({bookmarks.storageError ? 'unavailable' : bookmarks.length})</button>
+        <button onClick={() => setSourcesOpen(true)}>Sources</button><button onClick={() => setSettingsOpen(true)}>Settings</button></nav></header>
+    <main id="news" tabIndex={-1} ref={readingAreaRef}><div className="reader-controls"><SearchBar onSearch={handleSearch} value={searchDraft} onChange={setSearchDraft} />
+      <div className="filter-controls"><div><label htmlFor="topic-filter">Topic</label><select id="topic-filter" value={category} onChange={(event) => { setCategory(event.target.value); setVisibleCount(12); }}>{Object.entries(categoryLabels).map(([id, name]) => <option key={id} value={id}>{name}</option>)}</select></div>
+        <div><label htmlFor="publisher-filter">Publisher</label><select id="publisher-filter" value={source} onChange={(event) => setSource(event.target.value)}><option value="all">All publishers</option>{source !== 'all' && !publishers.some((publisher) => publisher.id === source) && <option value={source}>{source} (no articles available in this collection)</option>}{publishers.map((publisher) => <option key={publisher.id} value={publisher.id}>{publisher.name}</option>)}</select></div>
+        <div><label htmlFor="sort-filter">Sort articles</label><select id="sort-filter" value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Headline A to Z</option></select></div></div>
+      </div><h2>{savedView ? 'Saved articles' : 'Latest news'}</h2>
+      {bookmarks.storageError && <div className="error-state"><p role="alert">Saved articles could not be read reliably. {bookmarks.storageError} Allow browser storage for this site, then retry.</p>
+        <button onClick={() => setBookmarks(readBookmarks())}>Retry saved articles</button></div>}
+      {displayedArticles.length > 0 && <p className="result-count" role="status">Showing {Math.min(visibleCount, displayedArticles.length)} of {displayedArticles.length} articles.</p>}
+      {!savedView && articles.length > 0 && articleResult && (articleResult.generation !== requestGeneration || requestStatus === 'failed') && <p role="status" className="feed-note">Showing articles from a previous result. {requestStatus === 'failed' ? 'The current request failed.' : 'The current request has not replaced them yet.'}</p>}
+      {!savedView && articleResult?.stale && <p role="status" className="feed-note">Cached articles may be out of date. These articles came from a cached result.</p>}
+      {!savedView && feedResult?.storageWarnings?.length > 0 && <div className="feed-note"><div role="status"><p>News storage needs attention.{articles.length > 0 && ' Fetched articles remain readable.'}</p>
+        <ul>{[...new Set(feedResult.storageWarnings)].map((warning) => <li key={warning}>{warning}</li>)}</ul><p>Allow browser storage for this site. Free space if storage is full, then retry.</p></div>
+        <button onClick={() => loadNews(query, true)}>Retry news storage</button></div>}
+      {!savedView && error && <ErrorMessage message={error} onRetry={() => loadNews(query, true)} />}
+      {!savedView && loading && <Loading />}
+      {displayedArticles.length ?
+        <ArticleGrid articles={displayedArticles.slice(0, visibleCount)} onSelectArticle={(article) => { setBookmarkNotice(null); setSelectedArticle(article); }} /> : (!loading || savedView) && (savedView || !error) && !(savedView && bookmarks.storageError) &&
+        <div className="empty-state"><p role="status">{savedView && !bookmarks.length ? 'No saved articles yet. Open a headline and save it to read later.' : 'No articles match these filters.'}</p>
+          <button onClick={resetFilters}>Reset filters</button></div>}
+      {visibleCount < displayedArticles.length && <div className="load-more"><button onClick={() => {
+        if (visibleCount + 12 >= displayedArticles.length) paginationFocusRef.current = visibleCount;
+        setVisibleCount((count) => count + 12);
+      }}>Show more articles</button></div>}
+    </main>
+    <footer><p>Headlines and short previews from publishers. Read full articles at the source.</p><p>Saved articles stay in this browser.</p></footer>
+    <SourcesModal isOpen={sourcesOpen} onClose={() => setSourcesOpen(false)} feedHealth={requestHealth} requestStatus={requestStatus} cachedHealth={Boolean(feedResult?.cached)} />
+    <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} onConfigSaved={() => loadNews(query, true)} />
+    <ArticleDrawer article={selectedArticle} onClose={() => setSelectedArticle(null)}
+      isBookmarked={bookmarks.some((bookmark) => bookmark.id === selectedArticle?.id)}
+      onToggleBookmark={toggleBookmark} bookmarkNotice={bookmarkNotice} />
+  </div>;
 }
-
-export default App;
