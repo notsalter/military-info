@@ -8,14 +8,17 @@ import SettingsModal from './components/SettingsModal';
 import SourcesModal from './components/SourcesModal';
 import { categoryLabels } from './components/ArticleMetadata';
 import { selectArticles } from './services/articleUtils';
+import { decodeArticlePath, getArticlePath } from './services/articleLinks';
 import { fetchNews } from './services/newsApi';
 import { readBookmarks, removeBookmark, saveBookmarks } from './services/storage';
+import { CURATION_DISCLAIMER } from './services/curationDisclaimer';
 import './index.css';
 
 export default function App() {
   const [articles, setArticles] = useState([]);
   const [bookmarks, setBookmarks] = useState(() => readBookmarks());
-  const [selectedArticle, setSelectedArticle] = useState(null);
+  const [articleRoute, setArticleRoute] = useState(() => decodeArticlePath(window.location.pathname)?.path || null);
+  const [selectedArticle, setSelectedArticle] = useState(() => (articleRoute && bookmarks.find((article) => getArticlePath(article) === articleRoute)) || null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const [bookmarkNotice, setBookmarkNotice] = useState(null);
@@ -37,6 +40,76 @@ export default function App() {
   const requestRef = useRef({ generation: 0, controller: null });
   const readingAreaRef = useRef(null);
   const paginationFocusRef = useRef(null);
+  const knownArticlesRef = useRef(new Map());
+  const articleRouteRef = useRef(articleRoute);
+  const listingSnapshotsRef = useRef(new Map());
+  const activeListingRef = useRef(null);
+  const pendingListingRef = useRef(null);
+  useEffect(() => {
+    const restoreArticle = () => {
+      setBookmarkNotice(null);
+      const path = decodeArticlePath(window.location.pathname)?.path || null;
+      const listingURL = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const previousListing = activeListingRef.current;
+      pendingListingRef.current = !path && previousListing?.url === listingURL ? previousListing : null;
+      activeListingRef.current = path ? listingSnapshotsRef.current.get(window.history.state?.militaryInfoArticle?.listingKey) || null : null;
+      articleRouteRef.current = path;
+      setArticleRoute(path);
+      setSelectedArticle((path && (knownArticlesRef.current.get(path)
+        || [...articles, ...bookmarks].find((article) => getArticlePath(article) === path))) || null);
+    };
+    window.addEventListener('popstate', restoreArticle);
+    return () => window.removeEventListener('popstate', restoreArticle);
+  }, [articles, bookmarks]);
+  const openArticle = (article) => {
+    const path = getArticlePath(article);
+    if (path) knownArticlesRef.current.set(path, article);
+    pendingListingRef.current = null;
+    if (path && window.location.pathname !== path) {
+      const listingURL = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const listingKey = window.crypto.randomUUID();
+      const listing = { url: listingURL, x: window.scrollX, y: window.scrollY, trigger: document.activeElement };
+      listingSnapshotsRef.current.set(listingKey, listing);
+      activeListingRef.current = listing;
+      window.history.pushState({ ...window.history.state, militaryInfoArticle: { path, listingURL, listingKey } }, '', path);
+    }
+    articleRouteRef.current = path;
+    setArticleRoute(path);
+    setBookmarkNotice(null);
+    setSelectedArticle(article);
+  };
+  const activeArticle = selectedArticle || (articleRoute && [...articles, ...bookmarks].find((article) => getArticlePath(article) === articleRoute)) || null;
+  useEffect(() => {
+    const path = getArticlePath(activeArticle);
+    if (path) knownArticlesRef.current.set(path, activeArticle);
+  }, [activeArticle]);
+  useEffect(() => {
+    if (activeArticle || articleRoute || !pendingListingRef.current) return;
+    const listing = pendingListingRef.current;
+    // History fragment targeting runs after popstate; restore only after the drawer cleanup.
+    const frame = window.requestAnimationFrame(() => {
+      if (pendingListingRef.current !== listing || articleRouteRef.current
+        || `${window.location.pathname}${window.location.search}${window.location.hash}` !== listing.url) return;
+      pendingListingRef.current = null;
+      if (readingAreaRef.current?.closest('[inert]')) return;
+      const trigger = listing.trigger?.isConnected ? listing.trigger : readingAreaRef.current;
+      trigger?.focus({ preventScroll: true });
+      window.scrollTo({ left: listing.x, top: listing.y, behavior: 'instant' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeArticle, articleRoute]);
+  const closeArticle = () => {
+    if (getArticlePath(activeArticle) === window.location.pathname) {
+      if (window.history.state?.militaryInfoArticle?.path === window.location.pathname) {
+        window.history.back();
+        return;
+      }
+      window.history.replaceState(window.history.state, '', '/');
+    }
+    articleRouteRef.current = null;
+    setArticleRoute(null);
+    setSelectedArticle(null);
+  };
   useLayoutEffect(() => {
     if (paginationFocusRef.current === null) return;
     readingAreaRef.current?.querySelectorAll('.headline-button')[paginationFocusRef.current]?.focus();
@@ -58,6 +131,9 @@ export default function App() {
       setFeedResult(result);
       setRequestHealth(result.feedHealth || []);
       if (result.success) {
+        const path = articleRouteRef.current;
+        const matchedArticle = path && (result.articles || []).find((article) => getArticlePath(article) === path);
+        if (matchedArticle) setSelectedArticle((current) => current || matchedArticle);
         setArticles(result.articles || []);
         setArticleResult({ generation, stale: result.stale });
       }
@@ -119,7 +195,13 @@ export default function App() {
         <div><label htmlFor="sort-filter">Sort articles</label><select id="sort-filter" value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="title">Headline A to Z</option></select></div></div>
       </div><h2>{savedView ? 'Saved articles' : 'Latest news'}</h2>
       {bookmarks.storageError && <div className="error-state"><p role="alert">Saved articles could not be read reliably. {bookmarks.storageError} Allow browser storage for this site, then retry.</p>
-        <button onClick={() => setBookmarks(readBookmarks())}>Retry saved articles</button></div>}
+        <button onClick={() => {
+          const recovered = readBookmarks();
+          const path = articleRouteRef.current;
+          const matchedArticle = path && recovered.find((article) => getArticlePath(article) === path);
+          if (matchedArticle) setSelectedArticle((current) => current || matchedArticle);
+          setBookmarks(recovered);
+        }}>Retry saved articles</button></div>}
       {displayedArticles.length > 0 && <p className="result-count" role="status">Showing {Math.min(visibleCount, displayedArticles.length)} of {displayedArticles.length} articles.</p>}
       {!savedView && articles.length > 0 && articleResult && (articleResult.generation !== requestGeneration || requestStatus === 'failed') && <p role="status" className="feed-note">Showing articles from a previous result. {requestStatus === 'failed' ? 'The current request failed.' : 'The current request has not replaced them yet.'}</p>}
       {!savedView && articleResult?.stale && <p role="status" className="feed-note">Cached articles may be out of date. These articles came from a cached result.</p>}
@@ -129,7 +211,7 @@ export default function App() {
       {!savedView && error && <ErrorMessage message={error} onRetry={() => loadNews(query, true)} />}
       {!savedView && loading && <Loading />}
       {displayedArticles.length ?
-        <ArticleGrid articles={displayedArticles.slice(0, visibleCount)} onSelectArticle={(article) => { setBookmarkNotice(null); setSelectedArticle(article); }} /> : (!loading || savedView) && (savedView || !error) && !(savedView && bookmarks.storageError) &&
+        <ArticleGrid articles={displayedArticles.slice(0, visibleCount)} onSelectArticle={openArticle} /> : (!loading || savedView) && (savedView || !error) && !(savedView && bookmarks.storageError) &&
         <div className="empty-state"><p role="status">{savedView && !bookmarks.length ? 'No saved articles yet. Open a headline and save it to read later.' : 'No articles match these filters.'}</p>
           <button onClick={resetFilters}>Reset filters</button></div>}
       {visibleCount < displayedArticles.length && <div className="load-more"><button onClick={() => {
@@ -137,11 +219,11 @@ export default function App() {
         setVisibleCount((count) => count + 12);
       }}>Show more articles</button></div>}
     </main>
-    <footer><p>Headlines and short previews from publishers. Read full articles at the source.</p><p>Saved articles stay in this browser.</p></footer>
+    <footer><p>{CURATION_DISCLAIMER}</p><p>Saved articles stay in this browser.</p></footer>
     <SourcesModal isOpen={sourcesOpen} onClose={() => setSourcesOpen(false)} feedHealth={requestHealth} requestStatus={requestStatus} cachedHealth={Boolean(feedResult?.cached)} />
     <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} onConfigSaved={() => loadNews(query, true)} />
-    <ArticleDrawer article={selectedArticle} onClose={() => setSelectedArticle(null)}
-      isBookmarked={bookmarks.some((bookmark) => bookmark.id === selectedArticle?.id)}
+    <ArticleDrawer article={activeArticle} onClose={closeArticle}
+      isBookmarked={bookmarks.some((bookmark) => bookmark.id === activeArticle?.id)}
       onToggleBookmark={toggleBookmark} bookmarkNotice={bookmarkNotice} />
   </div>;
 }

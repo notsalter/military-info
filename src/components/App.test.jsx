@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import App from '../App';
@@ -7,6 +7,7 @@ import { readBookmarks, removeBookmark, saveBookmarks } from '../services/storag
 import { FEEDS } from '../services/feeds';
 import { readFileSync } from 'node:fs';
 import { cwd } from 'node:process';
+import { Buffer } from 'node:buffer';
 const stylesheet = readFileSync(`${cwd()}/src/index.css`, 'utf8');
 
 vi.mock('../services/newsApi', () => ({ fetchNews: vi.fn(), getCustomKeys: () => ({}), saveCustomKeys: vi.fn(), clearCustomKeys: vi.fn(), clearCache: vi.fn() }));
@@ -18,13 +19,341 @@ const result = (articles, extra = {}) => ({ success: true, articles, source: 'rs
 const deferred = () => { let resolve; let reject; const promise = new Promise((done, fail) => { resolve = done; reject = fail; }); return { promise, resolve, reject }; };
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.restoreAllMocks();
+  window.history.replaceState(null, '', '/');
   Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { clear: vi.fn(), getItem: () => null } });
   HTMLDialogElement.prototype.showModal = function () { this.setAttribute('open', ''); };
   HTMLDialogElement.prototype.close = function () { this.removeAttribute('open'); };
+  vi.spyOn(window, 'scrollTo').mockImplementation(() => {});
   readBookmarks.mockReset().mockReturnValue([]);
   saveBookmarks.mockReset().mockReturnValue({ success: true });
   removeBookmark.mockReset().mockImplementation(id => ({ success: true, articles: readBookmarks().filter(item => item.id !== id) }));
   fetchNews.mockResolvedValue(result([navy, ground]));
+});
+
+const registeredNavy = { ...navy, source: { id: FEEDS[0].id, name: FEEDS[0].name, url: FEEDS[0].url } };
+const registeredPath = `/article/${FEEDS[0].id}/${Buffer.from(registeredNavy.url).toString('base64url')}`;
+
+it('retains an initially resolved article while progressive results evict it from the listing', async () => {
+  window.history.replaceState(null, '', registeredPath);
+  const pending = deferred();
+  fetchNews.mockReturnValue(pending.promise);
+  render(<App />);
+  const options = fetchNews.mock.calls[0][2];
+  await act(async () => options.onProgress(result([registeredNavy])));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+  await act(async () => options.onProgress(result([ground])));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+  expect(window.location.pathname).toBe(registeredPath);
+  await act(async () => pending.resolve(result([ground])));
+});
+
+it('keeps an initially resolved saved article open after successful bookmark removal', async () => {
+  window.history.replaceState(null, '', registeredPath);
+  readBookmarks.mockReturnValue([registeredNavy]);
+  fetchNews.mockResolvedValue(result([]));
+  const user = userEvent.setup();
+  render(<App />);
+  const dialog = await screen.findByRole('dialog', { name: registeredNavy.title });
+  await user.click(within(dialog).getByRole('button', { name: 'Remove saved article' }));
+  expect(screen.getByRole('button', { name: 'Saved articles (0)' })).toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+  expect(within(dialog).getByRole('status')).toHaveTextContent('Article removed from saved articles.');
+  expect(window.location.pathname).toBe(registeredPath);
+});
+
+it('keeps the pending initial route snapshot readable until explicit Close after progress and final eviction', async () => {
+  window.history.replaceState(null, '', registeredPath);
+  const pending = deferred();
+  fetchNews.mockReturnValue(pending.promise);
+  const push = vi.spyOn(window.history, 'pushState');
+  const user = userEvent.setup();
+  render(<App />);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  const options = fetchNews.mock.calls[0][2];
+  await act(async () => options.onProgress(result([ground])));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  const trigger = screen.getByRole('searchbox', { name: 'Search headlines' });
+  trigger.focus();
+  await act(async () => options.onProgress(result([registeredNavy], { cached: true, stale: true })));
+  const dialog = screen.getByRole('dialog', { name: registeredNavy.title });
+  await act(async () => options.onProgress(result([ground])));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBe(dialog);
+  await act(async () => pending.resolve(result([ground])));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBe(dialog);
+  expect(window.location.pathname).toBe(registeredPath);
+  expect(push).not.toHaveBeenCalled();
+  await user.click(within(dialog).getByRole('button', { name: 'Close article' }));
+  expect(window.location.pathname).toBe('/');
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(trigger).toHaveFocus();
+});
+
+it('retains the initial saved route during pending news after persisted removal and progress', async () => {
+  window.history.replaceState(null, '', registeredPath);
+  readBookmarks.mockReturnValue([registeredNavy]);
+  const pending = deferred();
+  fetchNews.mockReturnValue(pending.promise);
+  const user = userEvent.setup();
+  render(<App />);
+  const dialog = screen.getByRole('dialog', { name: registeredNavy.title });
+  await user.click(within(dialog).getByRole('button', { name: 'Remove saved article' }));
+  expect(removeBookmark).toHaveBeenCalledExactlyOnceWith(registeredNavy.id);
+  expect(screen.getByRole('button', { name: 'Saved articles (0)' })).toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBe(dialog);
+  expect(within(dialog).getByRole('status')).toHaveTextContent('Article removed from saved articles.');
+  expect(within(dialog).getByRole('button', { name: 'Save article' })).toHaveAttribute('aria-pressed', 'false');
+  await act(async () => fetchNews.mock.calls[0][2].onProgress(result([ground])));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBe(dialog);
+  await act(async () => pending.resolve(result([ground])));
+  expect(within(dialog).getByRole('status')).toHaveTextContent('Article removed from saved articles.');
+  expect(window.location.pathname).toBe(registeredPath);
+  await user.click(within(dialog).getByRole('button', { name: 'Close article' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe('/');
+});
+
+it.each(['progress', 'saved'])('restores an initial %s snapshot on Forward after explicit Close returns to the exact listing', async origin => {
+  const listingURL = '/?view=latest#news';
+  const listingState = { fixture: 'initial route listing' };
+  window.history.replaceState(listingState, '', listingURL);
+  window.history.pushState({ militaryInfoArticle: { path: registeredPath, listingURL } }, '', registeredPath);
+  if (origin === 'saved') readBookmarks.mockReturnValue([registeredNavy]);
+  const pending = deferred();
+  fetchNews.mockReturnValue(pending.promise);
+  const push = vi.spyOn(window.history, 'pushState');
+  const user = userEvent.setup();
+  render(<App />);
+  if (origin === 'progress') await act(async () => fetchNews.mock.calls[0][2].onProgress(result([registeredNavy])));
+  const dialog = screen.getByRole('dialog', { name: registeredNavy.title });
+  if (origin === 'saved') await user.click(within(dialog).getByRole('button', { name: 'Remove saved article' }));
+  await act(async () => pending.resolve(result([ground])));
+  await user.click(within(dialog).getByRole('button', { name: 'Close article' }));
+  await waitFor(() => expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(listingURL));
+  expect(window.history.state).toEqual(listingState);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: ground.title })).toBeInTheDocument();
+  expect(screen.queryByRole('link', { name: registeredNavy.title })).not.toBeInTheDocument();
+  await act(async () => window.history.forward());
+  const restored = await screen.findByRole('dialog', { name: registeredNavy.title });
+  expect(window.location.pathname).toBe(registeredPath);
+  expect(within(restored).getByRole('button', { name: 'Save article' })).toHaveAttribute('aria-pressed', 'false');
+  expect(within(restored).queryByText('Article removed from saved articles.')).not.toBeInTheDocument();
+  expect(push).not.toHaveBeenCalled();
+  await act(async () => window.history.back());
+  await waitFor(() => expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(listingURL));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+});
+
+it.each(['progress eviction', 'bookmark removal'])('retains a genuine popstate-resolved article through %s', async change => {
+  if (change === 'bookmark removal') readBookmarks.mockReturnValue([registeredNavy]);
+  const pending = deferred();
+  fetchNews.mockReturnValue(pending.promise);
+  const user = userEvent.setup();
+  render(<App />);
+  const options = fetchNews.mock.calls[0][2];
+  await act(async () => options.onProgress(result(change === 'progress eviction' ? [registeredNavy] : [])));
+  await act(async () => {
+    window.history.pushState(null, '', registeredPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  const dialog = screen.getByRole('dialog', { name: registeredNavy.title });
+  if (change === 'progress eviction') await act(async () => options.onProgress(result([ground])));
+  else await user.click(within(dialog).getByRole('button', { name: 'Remove saved article' }));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBe(dialog);
+  if (change === 'bookmark removal') expect(within(dialog).getByRole('status')).toHaveTextContent('Article removed from saved articles.');
+  expect(window.location.pathname).toBe(registeredPath);
+  await act(async () => pending.resolve(result([ground])));
+});
+
+it('retains a genuine initial-route article resolved by saved-storage recovery after removal', async () => {
+  window.history.replaceState(null, '', registeredPath);
+  const unreadable = Object.defineProperty([], 'storageError', { value: 'Unable to read browser storage.' });
+  readBookmarks.mockReturnValueOnce(unreadable).mockReturnValue([registeredNavy]);
+  fetchNews.mockReturnValue(new Promise(() => {}));
+  const user = userEvent.setup();
+  render(<App />);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: 'Retry saved articles' }));
+  const dialog = screen.getByRole('dialog', { name: registeredNavy.title });
+  await user.click(within(dialog).getByRole('button', { name: 'Remove saved article' }));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBe(dialog);
+  expect(within(dialog).getByRole('status')).toHaveTextContent('Article removed from saved articles.');
+  expect(window.location.pathname).toBe(registeredPath);
+});
+
+it.each(['progress', 'saved', 'recovery'])('restores a genuine %s route snapshot on Forward after unseen history resolution and Close', async origin => {
+  const listingURL = '/?view=saved#news';
+  const listingState = { fixture: 'unseen route listing' };
+  window.history.replaceState(listingState, '', listingURL);
+  if (origin === 'saved') readBookmarks.mockReturnValue([registeredNavy]);
+  if (origin === 'recovery') {
+    const unreadable = Object.defineProperty([], 'storageError', { value: 'Unable to read browser storage.' });
+    readBookmarks.mockReturnValueOnce(unreadable).mockReturnValue([registeredNavy]);
+  }
+  const pending = deferred();
+  fetchNews.mockReturnValue(pending.promise);
+  const user = userEvent.setup();
+  render(<App />);
+  const options = fetchNews.mock.calls[0][2];
+  if (origin === 'progress') await act(async () => options.onProgress(result([registeredNavy])));
+  await act(async () => {
+    window.history.pushState({ militaryInfoArticle: { path: registeredPath, listingURL } }, '', registeredPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  const push = vi.spyOn(window.history, 'pushState');
+  if (origin === 'recovery') await user.click(screen.getByRole('button', { name: 'Retry saved articles' }));
+  const dialog = screen.getByRole('dialog', { name: registeredNavy.title });
+  if (origin !== 'progress') await user.click(within(dialog).getByRole('button', { name: 'Remove saved article' }));
+  await act(async () => pending.resolve(result([ground])));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBe(dialog);
+  await user.click(within(dialog).getByRole('button', { name: 'Close article' }));
+  await waitFor(() => expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(listingURL));
+  expect(window.history.state).toEqual(listingState);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await act(async () => window.history.forward());
+  const restored = await screen.findByRole('dialog', { name: registeredNavy.title });
+  expect(window.location.pathname).toBe(registeredPath);
+  expect(within(restored).queryByText('Article removed from saved articles.')).not.toBeInTheDocument();
+  expect(within(restored).getByRole('button', { name: 'Save article' })).toHaveAttribute('aria-pressed', 'false');
+  await act(async () => window.history.back());
+  await waitFor(() => expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(listingURL));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(push).not.toHaveBeenCalled();
+});
+
+it.each([
+  `/article/${FEEDS[0].id}/${Buffer.from('https://example.test/unmatched').toString('base64url')}`,
+  '/article/unknown-publisher/aHR0cHM6Ly9leGFtcGxlLnRlc3QvbmF2eQ',
+  `/article/${FEEDS[0].id}/invalid`,
+])('does not reuse an open snapshot or manufacture a record for an unknown history target %s', async path => {
+  fetchNews.mockResolvedValue(result([registeredNavy]));
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole('link', { name: registeredNavy.title }));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+  const push = vi.spyOn(window.history, 'pushState');
+  await act(async () => {
+    window.history.replaceState(null, '', path);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe(path);
+  expect(push).not.toHaveBeenCalled();
+});
+
+it('does not resolve an unseen route from superseded progress or final results', async () => {
+  const oldRequest = deferred();
+  const currentRequest = deferred();
+  fetchNews.mockReturnValueOnce(oldRequest.promise).mockReturnValueOnce(currentRequest.promise);
+  const user = userEvent.setup();
+  render(<App />);
+  const oldOptions = fetchNews.mock.calls[0][2];
+  await user.click(screen.getByRole('button', { name: 'Search' }));
+  await act(async () => {
+    window.history.pushState(null, '', registeredPath);
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    oldOptions.onProgress(result([registeredNavy]));
+    oldRequest.resolve(result([registeredNavy]));
+  });
+  expect(oldOptions.signal.aborted).toBe(true);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await act(async () => currentRequest.resolve(result([ground])));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe(registeredPath);
+});
+
+it('does not manufacture an article when the deep route has no matching current article', async () => {
+  window.history.replaceState(null, '', registeredPath);
+  fetchNews.mockResolvedValue(result([ground]));
+  render(<App />);
+  await screen.findByRole('button', { name: ground.title });
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.queryByText(navy.title)).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe(registeredPath);
+});
+
+it('does not push history when an unregistered headline opens', async () => {
+  const user = userEvent.setup();
+  const push = vi.spyOn(window.history, 'pushState');
+  render(<App />);
+  await user.click(await screen.findByRole('button', { name: navy.title }));
+  expect(screen.getByRole('dialog', { name: navy.title })).toBeInTheDocument();
+  expect(window.location.pathname).toBe('/');
+  expect(push).not.toHaveBeenCalled();
+});
+
+it('updates the address bar when a registered headline opens and returns to its exact listing URL on close', async () => {
+  window.history.replaceState({ fixture: 'listing state' }, '', '/?view=latest#news');
+  fetchNews.mockResolvedValue(result([registeredNavy]));
+  const push = vi.spyOn(window.history, 'pushState');
+  const user = userEvent.setup();
+  render(<App />);
+  const headline = await screen.findByRole('link', { name: registeredNavy.title });
+  await user.click(headline);
+  expect(window.location.pathname).toBe(registeredPath);
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+  expect(push).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole('button', { name: 'Close article' }));
+  await waitFor(() => expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe('/?view=latest#news'));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(window.history.state).toEqual({ fixture: 'listing state' });
+  expect(headline).toHaveFocus();
+});
+
+it('retains the opened article for Forward even when a later fetch replaces the listing collection', async () => {
+  fetchNews.mockResolvedValueOnce(result([registeredNavy])).mockResolvedValue(result([ground]));
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole('link', { name: registeredNavy.title }));
+  await user.click(screen.getByRole('button', { name: 'Close article' }));
+  await waitFor(() => expect(window.location.pathname).toBe('/'));
+  await user.click(screen.getByRole('button', { name: 'Search' }));
+  await screen.findByRole('button', { name: ground.title });
+  const push = vi.spyOn(window.history, 'pushState');
+  await act(async () => window.history.forward());
+  expect(await screen.findByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+  expect(push).not.toHaveBeenCalled();
+});
+
+it('closes on browser Back and restores the known article on Forward without adding history entries', async () => {
+  fetchNews.mockResolvedValue(result([registeredNavy]));
+  const user = userEvent.setup();
+  render(<App />);
+  await user.click(await screen.findByRole('link', { name: registeredNavy.title }));
+  const push = vi.spyOn(window.history, 'pushState');
+  await act(async () => window.history.back());
+  await waitFor(() => expect(window.location.pathname).toBe('/'));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await act(async () => window.history.forward());
+  expect(await screen.findByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+  expect(window.location.pathname).toBe(registeredPath);
+  expect(push).not.toHaveBeenCalled();
+});
+
+it('resolves an initial article route only after the matching current collection arrives without pushing history', async () => {
+  window.history.replaceState(null, '', registeredPath);
+  const pending = deferred();
+  fetchNews.mockReturnValue(pending.promise);
+  const push = vi.spyOn(window.history, 'pushState');
+  const user = userEvent.setup();
+  render(<App />);
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  await act(async () => pending.resolve(result([registeredNavy])));
+  expect(screen.getByRole('dialog', { name: registeredNavy.title })).toBeInTheDocument();
+  expect(push).not.toHaveBeenCalled();
+  await user.click(screen.getByRole('button', { name: 'Close article' }));
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(window.location.pathname).toBe('/');
+});
+
+it('shows the explicit curation disclaimer in the footer and article preview', async () => {
+  const disclaimer = 'Military Info curates headlines and short previews from third-party sources; we do not produce the original reporting. Original articles and images belong to their respective rights holders. Inclusion is not an endorsement. Read the linked publisher for full context and updates.';
+  const user = userEvent.setup();
+  render(<App />);
+  expect(within(screen.getByRole('contentinfo')).getByText(disclaimer)).toBeInTheDocument();
+  await user.click(await screen.findByRole('button', { name: navy.title }));
+  expect(within(screen.getByRole('dialog')).getByText(disclaimer)).toHaveClass('preview-note');
 });
 
 it.each([
@@ -384,11 +713,11 @@ it.each(['view switch', 'refresh'])('keeps an unavailable publisher selection ex
 });
 
 it.each([14, 15])('focuses the first appended headline after keyboard pagination ends with %i articles', async (count) => {
-  const pool = Array.from({ length: count }, (_, index) => ({ ...navy, id: `https://example.test/page-${index}`, url: `https://example.test/page-${index}`, title: `Test fixture: pagination headline ${index}` }));
+  const pool = Array.from({ length: count }, (_, index) => ({ ...registeredNavy, id: `https://example.test/page-${index}`, url: `https://example.test/page-${index}`, title: `Test fixture: pagination headline ${index}` }));
   fetchNews.mockResolvedValue(result(pool));
   const user = userEvent.setup();
   render(<App />);
-  await screen.findByRole('button', { name: pool[0].title });
+  await screen.findByRole('link', { name: pool[0].title });
   expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(12);
   const more = screen.getByRole('button', { name: 'Show more articles' });
   for (let step = 0; step < 60 && document.activeElement !== more; step++) await user.tab();
@@ -396,7 +725,7 @@ it.each([14, 15])('focuses the first appended headline after keyboard pagination
   await user.keyboard('{Enter}');
   expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(count);
   expect(screen.queryByRole('button', { name: 'Show more articles' })).not.toBeInTheDocument();
-  expect(screen.getAllByRole('heading', { level: 3 })[12].querySelector('button')).toHaveFocus();
+  expect(screen.getAllByRole('heading', { level: 3 })[12].querySelector('a.headline-button')).toHaveFocus();
 });
 
 it('keeps the mobile filter layout in its Topic, Publisher, Sort keyboard order', async () => {
@@ -597,7 +926,7 @@ it('exposes reading landmarks and announces a bounded list with load-more pagina
   const user = userEvent.setup();
   render(<App />);
   expect(screen.getByRole('link', { name: 'Skip to news' })).toHaveAttribute('href', '#news');
-  expect(screen.getByRole('contentinfo')).toHaveTextContent('Headlines and short previews');
+  expect(screen.getByRole('contentinfo')).toHaveTextContent('Military Info curates headlines and short previews from third-party sources');
   expect(screen.getByRole('button', { name: 'Latest news' })).toHaveAttribute('aria-pressed', 'true');
   await screen.findByRole('button', { name: pool[0].title });
   expect(screen.getAllByRole('heading', { level: 3 })).toHaveLength(12);
